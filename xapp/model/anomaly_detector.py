@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import pickle
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +53,19 @@ class AnomalyDetector:
         self._normal_mse_history: deque[float] = deque(maxlen=300)
         self.min_samples = min_samples
 
+        from xapp.model.lstm_autoencoder import LSTMAutoencoder
+        self.model = LSTMAutoencoder().to("cpu")
+        ae_path = Path("xapp/model/saved_models/lstm_ae_best.pt")
+        if ae_path.exists():
+            import torch
+            try:
+                self.model.load_state_dict(torch.load(ae_path, map_location="cpu"))
+            except Exception as e:
+                print(f"Warning: Failed to load model weights: {e}")
+        self.model.eval()
+
+        self._declared_anomalies_history: list[datetime] = []
+
     def _load_threshold(self, path: str) -> float:
         file_path = Path(path)
         if not file_path.exists():
@@ -85,6 +98,9 @@ class AnomalyDetector:
         
         if not is_anomaly:
             self._normal_mse_history.append(total_mse)
+
+        if declared:
+            self._declared_anomalies_history.append(datetime.now(timezone.utc))
             
         return AnomalyResult(
             is_anomaly=is_anomaly,
@@ -96,6 +112,16 @@ class AnomalyDetector:
             declared=declared,
             timestamp=datetime.now(timezone.utc),
         )
+
+    def recent_declared_anomalies(self, window_seconds: int) -> list[datetime]:
+        now = datetime.now(timezone.utc)
+        cutoff = now - timedelta(seconds=window_seconds)
+        self._declared_anomalies_history = [
+            t for t in self._declared_anomalies_history
+            if t > cutoff - timedelta(minutes=10)
+        ]
+        return [t for t in self._declared_anomalies_history if t > cutoff]
+
 
     def score_window(
         self, window: np.ndarray

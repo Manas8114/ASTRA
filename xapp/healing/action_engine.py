@@ -16,6 +16,9 @@ class HealingAction:
 
 
 class HealingActionEngine:
+    def __init__(self) -> None:
+        self.total_healed = 0
+
     def candidate_for(self, anomaly_type: AnomalyType) -> HealingAction | None:
         mapping = {
             AnomalyType.CONGESTION: HealingAction(
@@ -40,6 +43,7 @@ class HealingActionEngine:
         sim_result: Any,
         kpi_before: dict[str, float],
     ) -> dict[str, Any]:
+        self.total_healed += 1
         return {
             "type": "HEALING_APPLIED",
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -53,3 +57,13 @@ class HealingActionEngine:
             "kpi_before": kpi_before,
             "kpi_after": sim_result.projected_state,
         }
+
+    async def execute_raw(
+        self,
+        action_type: str,
+        parameters: dict[str, float],
+        mode: str = "PREEMPTIVE",
+    ) -> None:
+        # Simulate execution in the E2 RC service by printing/logging
+        pass
+

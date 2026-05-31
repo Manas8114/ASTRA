@@ -7,7 +7,8 @@ const initial = {
   healing: [],
   simulation: null,
   attribution: null,
-  events: []
+  events: [],
+  lastMessage: null
 };
 
 export function useWebSocket(url = "ws://localhost:8000/ws") {
@@ -21,28 +22,27 @@ export function useWebSocket(url = "ws://localhost:8000/ws") {
       const event = JSON.parse(message.data);
       setState((s) => {
         const events = [event, ...s.events].slice(0, 120);
+        const base = { ...s, events, lastMessage: message.data };
         if (event.type === "KPI_UPDATE") {
           return {
-            ...s,
-            events,
+            ...base,
             kpis: [...s.kpis, { timestamp: event.timestamp, ...event.kpis }].slice(-60)
           };
         }
         if (event.type === "ANOMALY_DETECTED") {
           return {
-            ...s,
-            events,
+            ...base,
             anomalies: [event, ...s.anomalies].slice(0, 30),
             attribution: event
           };
         }
         if (event.type === "DT_SIMULATION") {
-          return { ...s, events, simulation: event };
+          return { ...base, simulation: event };
         }
         if (event.type === "HEALING_APPLIED") {
-          return { ...s, events, healing: [event, ...s.healing].slice(0, 30) };
+          return { ...base, healing: [event, ...s.healing].slice(0, 30) };
         }
-        return { ...s, events };
+        return base;
       });
     };
     return () => ws.close();

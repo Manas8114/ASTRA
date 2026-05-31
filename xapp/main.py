@@ -18,6 +18,8 @@ from xapp.ingestion.kpi_subscriber import dev_kpi_stream
 from xapp.model.anomaly_detector import AnomalyDetector
 from xapp.model.attention_extractor import AttentionExtractor
 from xapp.state import LiveState
+from xapp.prediction.forecast_head import ForecastHead
+from xapp.prediction.preemptive_healer import PreemptiveHealer
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -41,14 +43,59 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
     attention = AttentionExtractor()
     twin = DigitalTwinSimulator(detector, float(os.getenv("DT_APPROVAL_THRESHOLD", "0.20")))
     healing = HealingActionEngine()
+    
+    # Initialize forecast head and preemptive healer
+    forecaster = ForecastHead(anomaly_detector=detector)
+    preemptive = PreemptiveHealer(
+        anomaly_classifier=classifier,
+        digital_twin=twin,
+        healing_engine=healing,
+        websocket_server=hub,
+        anomaly_detector=detector,
+    )
+    state.forecaster = forecaster
+    state.preemptive = preemptive
+
     stream = dev_kpi_stream(state)
 
     async for kpi in stream:
         buffer.push(kpi)
-        kpi_event = state.record_event({"type": "KPI_UPDATE", "kpis": kpi.to_dict()})
-        await hub.broadcast(kpi_event)
 
         window = buffer.get_window()
+        forecast_alert = False
+        forecast_confidence = None
+
+        if window is not None:
+            forecast = forecaster.predict(window)
+            forecast_alert = forecast.preemptive_alert
+            forecast_confidence = forecast.confidence
+
+            # Broadcast forecast risk curve to dashboard
+            await hub.broadcast({
+                "type": "FORECAST_UPDATE",
+                "timestamp": forecast.timestamp,
+                "preemptive_alert": forecast.preemptive_alert,
+                "seconds_to_anomaly": forecast.seconds_to_anomaly,
+                "at_risk_kpis": forecast.at_risk_kpis,
+                "confidence": forecast.confidence,
+                "risk_curve_60s": forecast.risk_curve[:60].tolist(),
+                "summary": forecast.summary,
+            })
+
+            if forecast.preemptive_alert:
+                asyncio.create_task(
+                    preemptive.evaluate(forecast, window)
+                )
+
+        kpi_event = state.record_event({
+            "type": "KPI_UPDATE",
+            "kpis": kpi.to_dict(),
+            "forecast_alert": forecast_alert,
+            "forecast_confidence": forecast_confidence,
+            "prevention_stats": preemptive.stats,
+        })
+        await hub.broadcast(kpi_event)
+
         if window is not None:
             if abs(state.threshold - last_calculated_threshold) > 1e-6:
                 detector.threshold = state.threshold

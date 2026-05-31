@@ -57,4 +57,42 @@ def rest_router(state: LiveState) -> APIRouter:
     async def health():
         return {"ok": True}
 
+    @router.get("/forecast/latest")
+    async def get_latest_forecast():
+        if not hasattr(state, "forecaster") or state.forecaster is None:
+            return {"status": "no_forecast_yet"}
+        r = state.forecaster._last_result
+        if r is None:
+            return {"status": "no_forecast_yet"}
+        return {
+            "preemptive_alert": r.preemptive_alert,
+            "seconds_to_anomaly": r.seconds_to_anomaly,
+            "at_risk_kpis": r.at_risk_kpis,
+            "confidence": r.confidence,
+            "risk_curve_60s": r.risk_curve[:60].tolist(),
+            "summary": r.summary,
+            "timestamp": r.timestamp,
+        }
+
+    @router.get("/prevention/stats")
+    async def get_prevention_stats():
+        if not hasattr(state, "preemptive") or state.preemptive is None:
+            return {
+                "prevented": 0,
+                "false_alarms": 0,
+                "applied": 0,
+                "prevention_rate": 0.0,
+                "reactive_healed": 0,
+                "total_incidents": 0,
+                "prevention_rate_pct": 0.0,
+            }
+        p = state.preemptive
+        h = state.preemptive.healer
+        return {
+            **p.stats,
+            "reactive_healed": h.total_healed,
+            "total_incidents": p.stats["prevented"] + h.total_healed,
+            "prevention_rate_pct": round(p.stats["prevention_rate"] * 100, 1),
+        }
+
     return router

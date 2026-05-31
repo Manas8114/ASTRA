@@ -9,6 +9,7 @@ import { HealingLog } from "./components/HealingLog.jsx";
 import { TopologyView } from "./components/TopologyView.jsx";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import { NocControls } from "./components/NocControls.jsx";
+import ForecastPanel from "./components/ForecastPanel.jsx";
 import "./styles.css";
 
 function App() {
@@ -25,6 +26,7 @@ function App() {
       <KPIFeed data={live.kpis} />
       <div className="grid">
         <NocControls />
+        <ForecastPanel wsLastMessage={live.lastMessage} />
         <AnomalyTimeline anomalies={live.anomalies} />
         <HeatmapView event={live.attribution} />
         <DTSimView simulation={live.simulation} />
