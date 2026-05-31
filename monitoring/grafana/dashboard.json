@@ -1,0 +1,25 @@
+{
+  "title": "ASTRA KPI Dashboard",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "KPIs over Time",
+      "targets": [
+        {
+          "expr": "kpi_dl_throughput_mbps",
+          "legendFormat": "DL Throughput"
+        },
+        {
+          "expr": "kpi_latency_ms",
+          "legendFormat": "Latency"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    }
+  ]
+}
