@@ -1,0 +1,31 @@
+services:
+  astra:
+    build:
+      context: .
+      dockerfile: xapp/Dockerfile
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./xapp/model/saved_models:/app/xapp/model/saved_models
+      - ./training/data:/app/training/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+  dashboard:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dashboard:/app
+    depends_on:
+      - astra
+    restart: unless-stopped
+networks:
+  default:
+    name: astra-net

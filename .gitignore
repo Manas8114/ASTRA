@@ -1,0 +1,19 @@
+# Node
+node_modules/
+dist/
+.temp_ag_kit
+.temp_ag_kit/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+.agents
