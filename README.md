@@ -1,5 +1,7 @@
 # ASTRA Predictive Healing Upgrade
 
+![ASTRA Dashboard Demo](docs/demo.gif)
+
 ## Drop-in extension for github.com/Manas8114/ASTRA
 
 ---
