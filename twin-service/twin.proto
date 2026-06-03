@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package twin;
+
+service DigitalTwin {
+    rpc SimulateAction (SimulateRequest) returns (SimulateResponse) {}
+}
+
+message CandidateAction {
+    string action_type = 1;
+    map<string, float> parameters = 2;
+}
+
+message SimulateRequest {
+    CandidateAction candidate = 1;
+    map<string, float> current_state = 2;
+    float current_mse = 3;
+}
+
+message SimulateResponse {
+    float projected_mse = 1;
+    float improvement_pct = 2;
+    bool approved = 3;
+    string recommendation = 4;
+    map<string, float> projected_state = 5;
+}

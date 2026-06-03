@@ -1,0 +1,80 @@
+flowchart TD
+    %% Define Subgraphs
+    subgraph RAN["5G RAN / KPI Sources"]
+        O5G[Open5GS / KPI JSONL]
+        PROM[Prometheus Exporters]
+    end
+
+    subgraph INGEST["Ingestion & State"]
+        K_SUB[KPI Subscriber]
+        K_BUF[KPI Buffer]
+        STATE[(Live State - Redis/SQLite)]
+    end
+
+    subgraph ML["Machine Learning Pipeline"]
+        LSTM[LSTM Autoencoder]
+        ANOM[Anomaly Detector]
+        CLASS[Anomaly Classifier]
+        FORECAST[Forecast Head]
+        EWC[EWC Continual Learning]
+        FED[Federated Client]
+    end
+
+    subgraph CONTROL["Healing & Twin Validation"]
+        TWIN{Digital Twin Simulator}
+        ACTION[Healing Action Engine]
+        PREEMPT[Preemptive Healer]
+    end
+
+    subgraph ACTUATE["Actuation Interface"]
+        E2[E2 RC Client]
+        A1[A1 Policy Receiver]
+    end
+
+    subgraph UI["NOC Dashboard"]
+        REACT[React Frontend]
+        API[FastAPI / WebSockets]
+    end
+
+    %% Data Flow
+    O5G --> K_SUB
+    PROM --> K_SUB
+    K_SUB --> K_BUF
+    
+    K_BUF --> LSTM
+    K_BUF --> FORECAST
+    
+    LSTM --> ANOM
+    ANOM -- "Reconstruction Error" --> CLASS
+    
+    CLASS -- "Anomaly Type" --> ACTION
+    FORECAST -- "Risk > Threshold" --> PREEMPT
+    
+    PREEMPT --> ACTION
+    ACTION -- "Proposed Action" --> TWIN
+    
+    TWIN -- "Approved" --> E2
+    TWIN -- "Rejected" --> ACTION
+    
+    %% API / State
+    K_SUB -.-> STATE
+    ACTION -.-> STATE
+    E2 -.-> STATE
+    
+    API <--> STATE
+    API <--> REACT
+    A1 --> ACTION
+    
+    %% Learning Updates
+    STATE -.-> EWC
+    EWC -.-> FED
+    
+    classDef source fill:#e1f5fe,stroke:#03a9f4,stroke-width:2px;
+    classDef engine fill:#e8f5e9,stroke:#4caf50,stroke-width:2px;
+    classDef ml fill:#fff3e0,stroke:#ff9800,stroke-width:2px;
+    classDef twin fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px;
+    
+    class O5G,PROM source;
+    class LSTM,ANOM,CLASS,FORECAST ml;
+    class ACTION,PREEMPT,TWIN engine;
+    class TWIN twin;

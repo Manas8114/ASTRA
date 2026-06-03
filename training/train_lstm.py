@@ -8,10 +8,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from xapp.model.anomaly_detector import MinMaxScalerLite
+from xapp.model.lstm_autoencoder import LSTMAutoencoder
 
 
 def make_windows(data: np.ndarray, size: int = 30) -> np.ndarray:
@@ -28,9 +32,68 @@ def main() -> None:
     scaled = scaler.transform(arr)
     windows = make_windows(scaled)
     split = int(len(windows) * 0.8)
+    train = windows[:split]
     val = windows[split:]
-    center = np.full_like(val, 0.5)
-    mse = ((val - center) ** 2).mean(axis=(1, 2))
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = LSTMAutoencoder().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    loss_fn = nn.MSELoss()
+    train_loader = DataLoader(
+        TensorDataset(torch.from_numpy(train.astype(np.float32))),
+        batch_size=64,
+        shuffle=True,
+    )
+    val_tensor = torch.from_numpy(val.astype(np.float32)).to(device)
+    best_val = float("inf")
+    patience = 5
+    stale = 0
+    out_dir = Path("xapp/model/saved_models")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / "lstm_ae_best.pt"
+
+    for epoch in range(1, 51):
+        model.train()
+        train_loss = 0.0
+        for (batch,) in train_loader:
+            batch = batch.to(device)
+            optimizer.zero_grad()
+            recon = model(batch)
+            loss = loss_fn(recon, batch)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            train_loss += loss.item() * len(batch)
+        train_loss /= len(train)
+
+        model.eval()
+        with torch.no_grad():
+            val_recon = model(val_tensor)
+            val_loss = float(loss_fn(val_recon, val_tensor).item())
+        print(f"epoch={epoch:02d} train_loss={train_loss:.6f} val_loss={val_loss:.6f}")
+        if val_loss < best_val:
+            best_val = val_loss
+            stale = 0
+            torch.save(model.state_dict(), model_path)
+        else:
+            stale += 1
+            if stale >= patience:
+                break
+
+    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.eval()
+    val_loader = DataLoader(
+        TensorDataset(torch.from_numpy(val.astype(np.float32))),
+        batch_size=128,
+        shuffle=False,
+    )
+    scores: list[np.ndarray] = []
+    with torch.no_grad():
+        for (batch,) in val_loader:
+            batch = batch.to(device)
+            recon = model(batch)
+            scores.append(((recon - batch) ** 2).mean(dim=(1, 2)).cpu().numpy())
+    mse = np.concatenate(scores)
     mean = float(mse.mean())
     std = float(mse.std())
     threshold = mean + 3 * std
@@ -39,8 +102,6 @@ def main() -> None:
         threshold = mean + 3.5 * std
         fpr = float((mse > threshold).mean())
 
-    out_dir = Path("xapp/model/saved_models")
-    out_dir.mkdir(parents=True, exist_ok=True)
     Path("training/data").mkdir(parents=True, exist_ok=True)
     with Path("training/data/scaler.pkl").open("wb") as handle:
         pickle.dump(scaler, handle)
@@ -57,9 +118,10 @@ def main() -> None:
                 "version": "statistical-baseline-v1",
                 "trained_at": datetime.now(timezone.utc).isoformat(),
                 "n_samples": int(len(arr)),
-                "val_loss": mean,
+                "val_loss": best_val,
                 "threshold": float(threshold),
                 "fpr": fpr,
+                "model_path": str(model_path),
             },
             indent=2,
         )

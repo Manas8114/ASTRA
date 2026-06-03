@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import os
+
+from fastapi import APIRouter, Header, HTTPException
 
 from xapp.ingestion.kpi_schema import AnomalyType
 from xapp.state import LiveState
@@ -8,6 +10,11 @@ from xapp.state import LiveState
 
 def rest_router(state: LiveState) -> APIRouter:
     router = APIRouter()
+
+    def require_control_auth(x_api_key: str | None) -> None:
+        expected = os.getenv("ASTRA_CONTROL_API_KEY")
+        if expected and x_api_key != expected:
+            raise HTTPException(status_code=401, detail="Invalid control API key")
 
     @router.get("/status")
     async def status():
@@ -39,7 +46,8 @@ def rest_router(state: LiveState) -> APIRouter:
         return state.snapshot()["latest_attribution"] or {}
 
     @router.post("/policy")
-    async def policy(payload: dict):
+    async def policy(payload: dict, x_api_key: str | None = Header(default=None)):
+        require_control_auth(x_api_key)
         threshold = payload.get("threshold") or payload.get("threshold_3sigma")
         if threshold is not None:
             with state.lock:
@@ -47,7 +55,8 @@ def rest_router(state: LiveState) -> APIRouter:
         return {"accepted": True, "threshold": state.snapshot()["threshold"]}
 
     @router.post("/inject/{anomaly_type}")
-    async def inject(anomaly_type: AnomalyType):
+    async def inject(anomaly_type: AnomalyType, x_api_key: str | None = Header(default=None)):
+        require_control_auth(x_api_key)
         with state.lock:
             state.injected_anomaly = anomaly_type.value
         event = state.record_event({"type": "MANUAL_INJECTION", "anomaly_type": anomaly_type.value})

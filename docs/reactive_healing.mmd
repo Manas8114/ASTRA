@@ -1,0 +1,35 @@
+sequenceDiagram
+    autonumber
+    participant RAN as RAN / Open5GS
+    participant INGEST as Ingestion Node
+    participant LSTM as LSTM Autoencoder
+    participant CLASS as Anomaly Classifier
+    participant ENGINE as Action Engine
+    participant TWIN as Digital Twin
+    participant E2 as E2 RC Client
+
+    RAN->>INGEST: Stream KPI Vector (e.g., JSONL / Prom)
+    INGEST->>LSTM: Buffered Sequence [T-seq_len : T]
+    
+    rect rgb(255, 235, 238)
+        LSTM->>LSTM: Calculate MSE Reconstruction Error
+        LSTM-->>CLASS: Error > Threshold (Anomaly Detected)
+    end
+    
+    CLASS->>CLASS: Extract Attention Weights
+    CLASS-->>ENGINE: AnomalyType (e.g., CONGESTION)
+    
+    ENGINE->>ENGINE: Lookup Candidate Action
+    ENGINE->>TWIN: Validate Action (e.g., Admission Control)
+    
+    rect rgb(243, 229, 245)
+        TWIN->>TWIN: Simulate state + proposed action
+        TWIN-->>ENGINE: Return Impact Risk Score (e.g., 0.15)
+    end
+    
+    alt Risk < DT_APPROVAL_THRESHOLD
+        ENGINE->>E2: Dispatch Safe Action
+        E2->>RAN: Execute E2 RC Control (e.g. Reject threshold = 20%)
+    else Risk >= DT_APPROVAL_THRESHOLD
+        ENGINE-->>ENGINE: Abort Action (Too Risky)
+    end

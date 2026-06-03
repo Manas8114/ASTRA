@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RadioTower } from "lucide-react";
 import { KPIFeed } from "./components/KPIFeed.jsx";
 import { AnomalyTimeline } from "./components/AnomalyTimeline.jsx";
-import { HeatmapView } from "./components/HeatmapView.jsx";
+import { XAIAttribution } from "./components/XAIAttribution.jsx";
 import { DTSimView } from "./components/DTSimView.jsx";
 import { HealingLog } from "./components/HealingLog.jsx";
 import { TopologyView } from "./components/TopologyView.jsx";
@@ -28,7 +28,7 @@ function App() {
         <NocControls />
         <ForecastPanel wsLastMessage={live.lastMessage} />
         <AnomalyTimeline anomalies={live.anomalies} />
-        <HeatmapView event={live.attribution} />
+        <XAIAttribution event={live.attribution} />
         <DTSimView simulation={live.simulation} />
         <HealingLog healing={live.healing} />
         <TopologyView events={live.events} />

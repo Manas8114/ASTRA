@@ -1,6 +1,8 @@
 import pytest
-import numpy as np
-import torch
+# pyrefly: ignore [missing-import]
+import numpy as np 
+# pyrefly: ignore [missing-import]
+import torch 
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from xapp.prediction.forecast_head import ForecastHead, ForecastHeadNet, ForecastResult

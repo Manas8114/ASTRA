@@ -1,4 +1,49 @@
 services:
+  mongodb:
+    image: mongo:7
+    profiles: ["lab"]
+    volumes:
+      - mongodb-data:/data/db
+    restart: unless-stopped
+
+  open5gs:
+    image: gradiant/open5gs:2.7.2
+    profiles: ["lab"]
+    depends_on:
+      - mongodb
+    ports:
+      - "9999:9999/udp"
+    restart: unless-stopped
+
+  kpi-exporter:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+    profiles: ["lab"]
+    env_file: .env
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
+  flexric:
+    image: ubuntu:22.04
+    profiles: ["lab"]
+    command: ["sh", "-c", "echo 'FlexRIC placeholder: mount/build your lab RIC here' && sleep infinity"]
+    ports:
+      - "36421:36421/sctp"
+    restart: unless-stopped
+
+  twin-service:
+    build:
+      context: .
+      dockerfile: twin-service/Dockerfile
+    profiles: ["lab"]
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+
   astra:
     build:
       context: .
@@ -9,6 +54,7 @@ services:
     volumes:
       - ./xapp/model/saved_models:/app/xapp/model/saved_models
       - ./training/data:/app/training/data
+      - ./data:/app/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 15s
@@ -26,6 +72,28 @@ services:
     depends_on:
       - astra
     restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["lab"]
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["lab"]
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana:/var/lib/grafana/dashboards
+    restart: unless-stopped
 networks:
   default:
     name: astra-net
+volumes:
+  mongodb-data:
+  grafana-data:

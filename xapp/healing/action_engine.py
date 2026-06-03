@@ -18,6 +18,14 @@ class HealingAction:
 class HealingActionEngine:
     def __init__(self) -> None:
         self.total_healed = 0
+        import os
+        import time
+        self.mode = os.getenv("ASTRA_MODE", "demo")
+        self.cooldown_seconds = float(os.getenv("HEALING_COOLDOWN_SECONDS", "30"))
+        self._last_action_at = 0.0
+        self._clock = time.monotonic
+        from xapp.healing.e2_rc_client import get_e2_client
+        self.e2_client = get_e2_client()
 
     def candidate_for(self, anomaly_type: AnomalyType) -> HealingAction | None:
         mapping = {
@@ -43,6 +51,30 @@ class HealingActionEngine:
         sim_result: Any,
         kpi_before: dict[str, float],
     ) -> dict[str, Any]:
+        now = self._clock()
+        if now - self._last_action_at < self.cooldown_seconds:
+            return {
+                "type": "ESCALATION",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "anomaly_type": anomaly_type.value,
+                "reason": "Healing cooldown active; operator review required.",
+                "action_type": action.action_type,
+                "parameters": action.parameters,
+            }
+
+        # Enforce blast radius limits in prod mode
+        if self.mode == "prod":
+            if action.action_type == "ADMISSION_CONTROL":
+                action.parameters["pct"] = min(action.parameters["pct"], 0.15)
+            elif action.action_type == "SLICE_REBALANCE":
+                action.parameters["pct"] = min(action.parameters["pct"], 0.20)
+            elif action.action_type == "POWER_CONTROL":
+                action.parameters["db"] = min(action.parameters["db"], 5.0)
+
+        # Transmit via E2
+        await self.e2_client.send_control(action.action_type, action.parameters)
+        self._last_action_at = now
+
         self.total_healed += 1
         return {
             "type": "HEALING_APPLIED",
@@ -56,6 +88,7 @@ class HealingActionEngine:
             "dt_approval_pct": round(sim_result.improvement_pct * 100.0, 2),
             "kpi_before": kpi_before,
             "kpi_after": sim_result.projected_state,
+            "rollback_action": self.rollback_for(action),
         }
 
     async def execute_raw(
@@ -64,6 +97,22 @@ class HealingActionEngine:
         parameters: dict[str, float],
         mode: str = "PREEMPTIVE",
     ) -> None:
-        # Simulate execution in the E2 RC service by printing/logging
-        pass
+        # Enforce blast radius limits in prod mode
+        if self.mode == "prod":
+            if action_type == "ADMISSION_CONTROL":
+                parameters["pct"] = min(parameters["pct"], 0.15)
+            elif action_type == "SLICE_REBALANCE":
+                parameters["pct"] = min(parameters["pct"], 0.20)
+            elif action_type == "POWER_CONTROL":
+                parameters["db"] = min(parameters["db"], 5.0)
+                
+        await self.e2_client.send_control(action_type, parameters)
 
+    def rollback_for(self, action: HealingAction) -> dict[str, Any]:
+        if action.action_type in {"ADMISSION_CONTROL", "SLICE_REBALANCE"}:
+            return {"action_type": action.action_type, "parameters": {"pct": 0.0}}
+        if action.action_type == "POWER_CONTROL":
+            return {"action_type": "POWER_CONTROL", "parameters": {"db": 0.0}}
+        if action.action_type == "HANDOVER_THRESHOLD_ADJUST":
+            return {"action_type": "HANDOVER_THRESHOLD_ADJUST", "parameters": {"db": 0.0}}
+        return {"action_type": "NOOP", "parameters": {}}

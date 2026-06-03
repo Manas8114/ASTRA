@@ -1,0 +1,23 @@
+replicaCount: 1
+
+image:
+  repository: astra-xapp
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+env:
+  ASTRA_MODE: "prod"
+  LOG_LEVEL: "INFO"
+  REDIS_HOST: "redis-master"
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi

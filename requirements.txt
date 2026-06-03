@@ -3,3 +3,15 @@ pytest-asyncio
 numpy
 fastapi
 uvicorn
+httpx
+
+onnxruntime
+grpcio
+grpcio-tools
+redis
+prometheus-fastapi-instrumentator
+
+torch
+pandas
+joblib
+scikit-learn

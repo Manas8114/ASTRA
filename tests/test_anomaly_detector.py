@@ -1,4 +1,5 @@
 import pytest
+# pyrefly: ignore [missing-import]
 import numpy as np
 from xapp.model.anomaly_detector import AnomalyDetector, MinMaxScalerLite
 

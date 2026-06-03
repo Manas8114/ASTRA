@@ -8,18 +8,24 @@ import uvicorn
 from fastapi import FastAPI
 
 from xapp.api.rest_api import rest_router
+from xapp.api.a1_api import router as a1_router
 from xapp.api.websocket_server import WebSocketHub, websocket_router
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+except Exception:  # pragma: no cover - optional in demo mode.
+    Instrumentator = None
 from xapp.classifier.anomaly_classifier import AnomalyClassifier
 from xapp.digital_twin.twin_simulator import DigitalTwinSimulator
 from xapp.healing.action_engine import HealingActionEngine
 from xapp.ingestion.kpi_buffer import KPIBuffer
 from xapp.ingestion.kpi_schema import AnomalyType
-from xapp.ingestion.kpi_subscriber import dev_kpi_stream
+from xapp.ingestion.kpi_adapters import select_kpi_stream
 from xapp.model.anomaly_detector import AnomalyDetector
 from xapp.model.attention_extractor import AttentionExtractor
 from xapp.state import LiveState
 from xapp.prediction.forecast_head import ForecastHead
 from xapp.prediction.preemptive_healer import PreemptiveHealer
+from xapp.innovations.multicell.coordinator import MultiCellCoordinator
 
 
 def load_dotenv(path: str = ".env") -> None:
@@ -43,20 +49,26 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
     attention = AttentionExtractor()
     twin = DigitalTwinSimulator(detector, float(os.getenv("DT_APPROVAL_THRESHOLD", "0.20")))
     healing = HealingActionEngine()
+    multicell = MultiCellCoordinator()
     
-    # Initialize forecast head and preemptive healer
-    forecaster = ForecastHead(anomaly_detector=detector)
-    preemptive = PreemptiveHealer(
-        anomaly_classifier=classifier,
-        digital_twin=twin,
-        healing_engine=healing,
-        websocket_server=hub,
-        anomaly_detector=detector,
+    # Forecasting needs the PyTorch encoder. ONNX-only prod deployments can run
+    # reactive healing without preemptive forecasting.
+    forecaster = ForecastHead(anomaly_detector=detector) if hasattr(detector, "model") else None
+    preemptive = (
+        PreemptiveHealer(
+            anomaly_classifier=classifier,
+            digital_twin=twin,
+            healing_engine=healing,
+            websocket_server=hub,
+            anomaly_detector=detector,
+        )
+        if forecaster is not None
+        else None
     )
     state.forecaster = forecaster
     state.preemptive = preemptive
 
-    stream = dev_kpi_stream(state)
+    stream = select_kpi_stream(state)
 
     async for kpi in stream:
         buffer.push(kpi)
@@ -65,7 +77,7 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
         forecast_alert = False
         forecast_confidence = None
 
-        if window is not None:
+        if window is not None and forecaster is not None and preemptive is not None:
             forecast = forecaster.predict(window)
             forecast_alert = forecast.preemptive_alert
             forecast_confidence = forecast.confidence
@@ -92,7 +104,7 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
             "kpis": kpi.to_dict(),
             "forecast_alert": forecast_alert,
             "forecast_confidence": forecast_confidence,
-            "prevention_stats": preemptive.stats,
+            "prevention_stats": preemptive.stats if preemptive is not None else {},
         })
         await hub.broadcast(kpi_event)
 
@@ -146,6 +158,8 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
                             "approved": sim.approved,
                             "current_state": current,
                             "projected_state": sim.projected_state,
+                            "queue_metrics": getattr(sim, "queue_metrics", None),
+                            "recommendation": sim.recommendation,
                         }
                     )
                     await hub.broadcast(sim_event)
@@ -154,6 +168,21 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
                         event = state.record_event(healed)
                         with state.lock:
                             state.injected_anomaly = None
+                        # Multi-cell coordination: warn neighbours of traffic shift
+                        try:
+                            coord_msgs = await multicell.broadcast(
+                                state.cell_id, candidate.action_type, candidate.parameters
+                            )
+                            if coord_msgs:
+                                coord_event = state.record_event({
+                                    "type": "MULTICELL_BROADCAST",
+                                    "source_cell": state.cell_id,
+                                    "neighbors_notified": len(coord_msgs),
+                                    "action": candidate.action_type,
+                                })
+                                await hub.broadcast(coord_event)
+                        except Exception:
+                            pass  # non-critical: best-effort coordination
                     else:
                         event = state.record_event(
                             {
@@ -168,8 +197,8 @@ async def detection_loop(state: LiveState, hub: WebSocketHub) -> None:
 
 async def main() -> None:
     load_dotenv()
-    if os.getenv("DEV_MODE", "false").lower() != "true":
-        raise RuntimeError("No production E2 KPI source configured. Set DEV_MODE=true for local simulation.")
+    if os.getenv("DEV_MODE", "false").lower() != "true" and os.getenv("KPI_SOURCE", "dev").lower() == "dev":
+        raise RuntimeError("Set KPI_SOURCE=prometheus/open5gs_file for lab mode, or DEV_MODE=true for local simulation.")
 
     state = LiveState(cell_id=os.getenv("CELL_ID", "cell_001"))
     hub = WebSocketHub()
@@ -186,6 +215,9 @@ async def main() -> None:
 
     app.include_router(rest_router(state))
     app.include_router(websocket_router(hub))
+    app.include_router(a1_router)
+    if os.getenv("ASTRA_MODE") == "prod" and Instrumentator is not None:
+        Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
     config = uvicorn.Config(app, host="0.0.0.0", port=int(os.getenv("ASTRA_API_PORT", "8000")), log_level="info")
     server = uvicorn.Server(config)

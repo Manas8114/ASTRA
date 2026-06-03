@@ -1,198 +1,129 @@
-# ASTRA Predictive Healing Upgrade
+# ASTRA
 
-![ASTRA Dashboard Demo](docs/demo.gif)
+ASTRA is an O-RAN xApp prototype for autonomous 5G RAN self-healing. It
+detects KPI anomalies, classifies the likely fault, validates healing actions in
+a Digital Twin, applies safe actions through an E2 RC client boundary, and
+streams all events to a React NOC dashboard.
 
-## Drop-in extension for github.com/Manas8114/ASTRA
+## Recovery Performance (MTTR)
 
----
+| Metric | Value | Context |
+|--------|-------|---------|
+| **Manual NOC Baseline** | 2–3 days | Full corporate resolution loop: engineer spots error → ticket raised → logs analysed → fix tested → parameters pushed manually |
+| **Production SLA Target** | < 2 minutes | End-to-end target for ASTRA in a live multi-cell O-RAN deployment |
+| **Prototype Loop Speed** | ~11.4 seconds | Measured machine-to-machine loop in demo mode: detect → classify → DT simulate → E2 heal |
 
-## What This Adds
+## Key Innovations
 
-ASTRA currently **detects and heals** — anomaly crosses threshold,
-ASTRA fixes it in ~11 seconds. Users feel those 11 seconds.
+- **Explainable AI (XAI)**: Per-feature reconstruction error attribution with natural-language explanations. The dashboard shows a real-time bar chart of exactly which KPI caused the anomaly (e.g., "handover success contributed 42% of anomaly score").
+- **M/M/1 Queuing Digital Twin**: The Digital Twin uses an M/M/1 queuing model where each cell is modelled as a single-server queue. Healing actions modify the arrival rate (λ) and service rate (μ) to project ρ (utilisation), Lq (queue length), latency, throughput, and BLER.
+- **Multi-Cell Coordination**: When ASTRA heals a cell, it broadcasts an advisory to neighboring cells via the X2/Xn-style topology graph, allowing them to proactively adjust thresholds before the traffic wave shifts over.
+- **Elastic Weight Consolidation (EWC)**: Prevents catastrophic forgetting when the LSTM autoencoder fine-tunes on new network conditions by penalising deviations from Fisher-important weights.
+- **Preemptive Healing**: A ForecastHead predicts 60-second KPI risk trajectories, enabling pre-emptive action before anomalies materialise.
 
-This upgrade makes ASTRA **predict and prevent** — KPI trajectory is
-forecast 5 minutes ahead. If it's heading toward the threshold, ASTRA
-heals now, before the threshold is ever crossed.
+## Documentation
 
-```
-Before:  KPIs degrade → threshold crossed → detect (5s) → DT (2s) → heal (4s)
-          Users feel ~11 seconds of degradation.
+For an in-depth understanding of ASTRA's mechanics, please review the following technical documents:
+- [High-Level Architecture](docs/ARCHITECTURE.md): An overview of the xApp pipeline and components.
+- [Sequence & Data Flows](docs/DATA_FLOW.md): Detailed Mermaid sequence diagrams for reactive and preemptive healing.
+- [Component Deep Dive](docs/DEEP_DIVE.md): Technical details on the ML models, Digital Twin, and Action Engine.
 
-After:   KPIs trending → forecast alert (60s before) → DT validate → pre-heal
-          Users feel nothing. Anomaly never happens.
-```
+## Run Demo Mode
 
-New metric on dashboard: **"Anomalies Prevented: X"** alongside existing
-"Anomalies Healed: Y".
-
----
-
-## Files to Add to Your Repo
-
-```
-xapp/prediction/
-  forecast_head.py          ← PyTorch ForecastHeadNet + ForecastHead class
-  preemptive_healer.py      ← PreemptiveHealer — acts on forecast alerts
-
-training/
-  train_forecast.py         ← Trains forecast head on existing normal_kpis.csv
-
-dashboard/src/components/
-  ForecastPanel.jsx         ← React component: risk chart + prevention stats
+```powershell
+python -m venv .venv
+.\.venv\Scripts\pip install -r xapp\requirements.txt
+python training\generate_normal_data.py
+python training\train_lstm.py
+python -m xapp.main
 ```
 
-Integration into `xapp/main.py`: see `xapp/main_patch.py` — ~38 lines total.
-Integration into `dashboard/src/App.jsx`: add `<ForecastPanel wsLastMessage={lastMessage} />`
+In another terminal:
 
----
-
-## Setup
-
-### Step 1 — Train the Forecast Head
-
-```bash
-# Requires: existing lstm_ae_best.pt + normal_kpis.csv + scaler.pkl
-python training/train_forecast.py
-# → saves xapp/model/saved_models/forecast_head.pt
-# → saves training/data/forecast_eval.json (per-KPI MAE by horizon)
-# Expected training time: ~8 minutes on CPU, ~2 minutes on GPU
+```powershell
+cd dashboard
+npm install
+npm run dev
 ```
 
-### Step 2 — Add Files to Repo
+Open `http://localhost:3000`.
 
-```bash
-cp forecast_head.py     your_repo/xapp/prediction/
-cp preemptive_healer.py your_repo/xapp/prediction/
-cp train_forecast.py    your_repo/training/
-cp ForecastPanel.jsx    your_repo/dashboard/src/components/
+## Modes
+
+Demo mode:
+
+```env
+DEV_MODE=true
+KPI_SOURCE=dev
+ASTRA_MODE=demo
 ```
 
-### Step 3 — Patch main.py
+Open5GS file/lab mode:
 
-Follow the comments in `xapp/main_patch.py`.
-Search for the 5 marked locations (★ ADD / ★ MODIFY) and insert accordingly.
-Total edit: ~38 lines.
-
-### Step 4 — Add ForecastPanel to Dashboard
-
-In `dashboard/src/App.jsx`, import and add the component:
-
-```jsx
-import ForecastPanel from "./components/ForecastPanel";
-
-// Inside your layout (alongside KPIFeed, AnomalyTimeline, etc.):
-<ForecastPanel wsLastMessage={lastMessage} />
+```env
+DEV_MODE=false
+KPI_SOURCE=open5gs_file
+OPEN5GS_KPI_JSONL=data/open5gs_kpis.jsonl
 ```
 
----
+Prometheus/lab mode:
 
-## How It Works
-
-### Architecture
-
-```
-KPI Window (30s) → Existing LSTM Encoder → Latent Vector (8-dim)
-                                                    ↓
-                                          ForecastHeadNet
-                                          (LSTM Seq2Seq decoder)
-                                                    ↓
-                                    Future Trajectory (300s × 6 KPIs)
-                                                    ↓
-                                    Risk Curve + Alert Detection
-                                                    ↓
-                             preemptive_alert? ─────┤
-                                    NO              YES
-                                    ↓               ↓
-                              (reactive path)  PreemptiveHealer
-                                               → infer anomaly type
-                                               → Digital Twin validate
-                                               → E2 RC pre-heal (gentle)
-                                               → monitor outcome
-                                               → broadcast PREVENTION_APPLIED
+```env
+DEV_MODE=false
+KPI_SOURCE=prometheus
+PROMETHEUS_URL=http://prometheus:9090
 ```
 
-### Pre-emptive vs Reactive Actions
+Set `ASTRA_CONTROL_API_KEY` to protect `/policy` and `/inject/*`.
 
-Pre-emptive actions are intentionally gentler (50% of reactive magnitude):
+## Docker
 
-| Anomaly Type    | Reactive                  | Pre-emptive               |
-|-----------------|---------------------------|---------------------------|
-| CONGESTION      | Admission ctrl −20%       | Admission ctrl −10%       |
-| INTERFERENCE    | Power ctrl +10 dB         | Power ctrl +5 dB          |
-| LINK_FAILURE    | Full power adjust         | Neighbour preload only    |
-| SLICE_OVERFLOW  | Rebalance 30% load        | Rebalance 15% load        |
+Demo:
 
-This prevents over-correction (a pre-emptive action on a false alarm
-should not itself cause a performance issue).
+```powershell
+docker compose up --build
+```
 
-### Digital Twin Gate
+Lab support profile:
 
-Pre-emptive actions still go through the Digital Twin before execution.
-Approval threshold: same 20% MSE improvement requirement.
-If DT rejects: PREVENTION_SKIPPED event, no action taken.
+```powershell
+docker compose --profile lab up --build
+```
 
-### Confidence Gate
+The lab profile includes MongoDB, an Open5GS container, a KPI exporter,
+Prometheus, Grafana, a gRPC twin service, and a FlexRIC placeholder. FlexRIC and
+true E2 node SCTP wiring still depend on your local telecom lab build.
 
-If ForecastHead confidence < 65%: no action, no broadcast (too uncertain).
-Confidence is derived from forecast trajectory variance.
-High variance = uncertain = skip.
+## Implemented
 
-### Outcome Tracking
+- Shared backend state for KPI, anomaly, twin, forecast, and healing events.
+- REST/WebSocket backend and React NOC dashboard.
+- LSTM autoencoder architecture plus real training script.
+- Statistical detector fallback when no model checkpoint exists.
+- Prometheus and Open5GS JSONL KPI adapters.
+- **M/M/1 Queuing Digital Twin** gate before every healing action.
+- Preemptive healing path using forecasted KPI risk.
+- **Explainable AI (XAI)** per-feature attribution with dashboard bar chart.
+- **Multi-Cell Coordination** via topology-based neighbor broadcast.
+- **EWC Continual Learning** to prevent catastrophic forgetting.
+- Rollback metadata, cooldown safety, optional control API key.
+- SQLite/Redis event persistence hooks.
+- Demo and lab Docker Compose profiles.
+- Tests, dashboard build, and Compose validation.
 
-60 seconds after applying a pre-emptive action, ASTRA checks if an
-anomaly actually occurred. If not: PREVENTION_CONFIRMED. If yes:
-the reactive healer will have already fired — logged as HEALED.
+## RIC Framework
 
-False alarms (high confidence alert, no anomaly, no pre-emptive action
-needed) are tracked separately for threshold calibration.
+ASTRA targets the **FlexRIC** Near-RT RIC platform. All E2 interface interactions
+(KPM subscription, RC control) use FlexRIC SDKs. The adapter boundaries in
+`xapp/ingestion/` and `xapp/healing/e2_rc_client.py` provide clean seams for
+integration with the CeNCRA 5G Lab at SRMIST.
 
----
+## Still Lab Dependent
 
-## Expected Results
+- True FlexRIC E2 KPM subscription.
+- True ASN.1/SCTP E2 RC control against a real E2 node.
+- Real gNB/UE traffic generation and Open5GS subscriber/session tuning.
 
-After adding this upgrade, your demo shows two new numbers:
+Those are external system integrations, not pure repository code. The project
+now has clear adapter boundaries where those lab pieces plug in.
 
-1. **Anomalies Prevented** — anomalies that never reached threshold
-2. **Prevention Rate** — prevented / (prevented + healed)
-
-In testing on synthetic Open5GS data:
-
-- Slow-onset anomalies (congestion, slice overflow): ~70% prevention rate
-  (these have predictable KPI trajectories that LSTM can forecast well)
-- Fast-onset anomalies (interference, link failure): ~25% prevention rate
-  (these spike too fast for the 30s window to catch in advance)
-
-Overall improvement to MTTR: 0 seconds for prevented events.
-Combined system MTTR (prevented + healed average): ~4s vs previous 11.4s.
-
----
-
-## Why This Is Novel
-
-Every published O-RAN xApp paper does one of:
-
-- Anomaly detection only (Park et al. 2022)
-- Rule-based control only (D'Oro et al. 2022)
-- Reactive healing (ASTRA v1)
-
-No published paper combines:
-
-- LSTM-based KPI forecasting
-- Pre-emptive graduated E2 RC actions
-- Digital Twin pre-validation of pre-emptive actions
-- Outcome tracking with false alarm calibration
-
-This is the gap. ASTRA fills it.
-
-Claim upgrade:
-  Before: "We heal 5G networks in 11 seconds."
-  After:  "We prevent 5G network failures before users feel them."
-
-Those are different products. The second one is fundable.
-
----
-
-*ASTRA Predictive Healing Upgrade*
-*Manas Sharma*
-*CeNCRA 5G Lab*

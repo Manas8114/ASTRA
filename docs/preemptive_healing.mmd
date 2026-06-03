@@ -1,0 +1,33 @@
+sequenceDiagram
+    autonumber
+    participant RAN as RAN / Open5GS
+    participant INGEST as Ingestion Node
+    participant FORECAST as Forecast Head
+    participant P_HEALER as Preemptive Healer
+    participant ENGINE as Action Engine
+    participant TWIN as Digital Twin
+
+    RAN->>INGEST: Stream Normal KPI Vector
+    INGEST->>FORECAST: Buffered Sequence [T-seq_len : T]
+    
+    rect rgb(255, 243, 224)
+        FORECAST->>FORECAST: Predict Future Sequence [T+1 : T+horizon]
+        FORECAST-->>P_HEALER: Future KPI Values
+    end
+    
+    P_HEALER->>P_HEALER: Check SLA Violations (e.g., future BLER > 5%)
+    
+    alt Preemptive Threshold Exceeded
+        P_HEALER->>ENGINE: Inject Synthetic Anomaly (e.g., INTERFERENCE)
+        
+        ENGINE->>TWIN: Validate Preventive Action
+        
+        rect rgb(243, 229, 245)
+            TWIN->>TWIN: Simulate Future State
+            TWIN-->>ENGINE: Approved
+        end
+        
+        ENGINE->>RAN: E2 RC Action Dispatched (Preemptive fix)
+    else Predictions Normal
+        P_HEALER-->>P_HEALER: No action required
+    end

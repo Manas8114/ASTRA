@@ -53,16 +53,30 @@ class AnomalyDetector:
         self._normal_mse_history: deque[float] = deque(maxlen=300)
         self.min_samples = min_samples
 
-        from xapp.model.lstm_autoencoder import LSTMAutoencoder
-        self.model = LSTMAutoencoder().to("cpu")
-        ae_path = Path("xapp/model/saved_models/lstm_ae_best.pt")
-        if ae_path.exists():
-            import torch
-            try:
-                self.model.load_state_dict(torch.load(ae_path, map_location="cpu"))
-            except Exception as e:
-                print(f"Warning: Failed to load model weights: {e}")
-        self.model.eval()
+        import os
+        self.mode = os.getenv("ASTRA_MODE", "demo")
+        
+        if self.mode == "prod":
+            import onnxruntime as ort
+            onnx_path = Path("xapp/model/saved_models/lstm_ae_best.onnx")
+            if onnx_path.exists():
+                self.onnx_session = ort.InferenceSession(str(onnx_path))
+            else:
+                print(f"Warning: ONNX model not found at {onnx_path}")
+                self.onnx_session = None
+        else:
+            from xapp.model.lstm_autoencoder import LSTMAutoencoder
+            self.model = LSTMAutoencoder().to("cpu")
+            ae_path = Path("xapp/model/saved_models/lstm_ae_best.pt")
+            self.model_loaded = False
+            if ae_path.exists():
+                import torch
+                try:
+                    self.model.load_state_dict(torch.load(ae_path, map_location="cpu"))
+                    self.model_loaded = True
+                except Exception as e:
+                    print(f"Warning: Failed to load model weights: {e}")
+            self.model.eval()
 
         self._declared_anomalies_history: list[datetime] = []
 
@@ -127,8 +141,23 @@ class AnomalyDetector:
         self, window: np.ndarray
     ) -> tuple[float, dict[str, float], dict[str, float]]:
         scaled = self.scaler.transform(window.astype(np.float32))
-        normal_center = np.full_like(scaled, 0.5)
-        per_feature = ((scaled - normal_center) ** 2).mean(axis=0)
+        
+        # Use actual model for reconstruction error
+        if self.mode == "prod" and hasattr(self, 'onnx_session') and self.onnx_session is not None:
+            # ONNX Inference
+            ort_inputs = {self.onnx_session.get_inputs()[0].name: np.expand_dims(scaled, axis=0)}
+            reconstructed = self.onnx_session.run(None, ort_inputs)[0][0]
+        else:
+            # PyTorch Inference
+            if getattr(self, "model_loaded", False):
+                import torch
+                with torch.no_grad():
+                    input_tensor = torch.tensor(scaled).unsqueeze(0)
+                    reconstructed = self.model(input_tensor).squeeze(0).numpy()
+            else:
+                reconstructed = np.full_like(scaled, 0.5)
+                
+        per_feature = ((scaled - reconstructed) ** 2).mean(axis=0)
         total_mse = float(per_feature.mean())
         total = float(per_feature.sum()) or 1.0
         attention = {
