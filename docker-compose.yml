@@ -1,24 +1,88 @@
 services:
+  # ── Always-on demo services ───────────────────────────────────────────────
+
+  twin-service:
+    build:
+      context: .
+      dockerfile: twin-service/Dockerfile
+    container_name: astra-twin
+    ports:
+      - "50051:50051"
+    restart: unless-stopped
+    networks:
+      - astra-net
+
+  astra:
+    build:
+      context: .
+      dockerfile: xapp/Dockerfile
+    container_name: astra-xapp
+    env_file: .env
+    environment:
+      - TWIN_SERVICE_HOST=twin-service
+      - TWIN_SERVICE_PORT=50051
+    ports:
+      - "8000:8000"
+    volumes:
+      - model-artifacts:/app/xapp/model/saved_models
+      - training-data:/app/training/data
+      - ./data:/app/data
+    depends_on:
+      - twin-service
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - astra-net
+
+  dashboard:
+    image: node:20-alpine
+    container_name: astra-dashboard
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dashboard:/app
+      - dashboard-node-modules:/app/node_modules
+    depends_on:
+      - astra
+    restart: unless-stopped
+    networks:
+      - astra-net
+
+  # ── Lab profile services (opt-in with --profile lab) ─────────────────────
+
   mongodb:
     image: mongo:7
+    container_name: astra-mongodb
     profiles: ["lab"]
     volumes:
       - mongodb-data:/data/db
     restart: unless-stopped
+    networks:
+      - astra-net
 
   open5gs:
     image: gradiant/open5gs:2.7.2
+    container_name: astra-open5gs
     profiles: ["lab"]
     depends_on:
       - mongodb
     ports:
       - "9999:9999/udp"
     restart: unless-stopped
+    networks:
+      - astra-net
 
   kpi-exporter:
     build:
       context: .
       dockerfile: core/Dockerfile
+    container_name: astra-kpi-exporter
     profiles: ["lab"]
     env_file: .env
     ports:
@@ -26,74 +90,51 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+    networks:
+      - astra-net
 
   flexric:
     image: ubuntu:22.04
+    container_name: astra-flexric
     profiles: ["lab"]
-    command: ["sh", "-c", "echo 'FlexRIC placeholder: mount/build your lab RIC here' && sleep infinity"]
+    command: ["sh", "-c", "echo 'FlexRIC placeholder — mount/build your lab RIC here' && sleep infinity"]
     ports:
       - "36421:36421/sctp"
     restart: unless-stopped
-
-  twin-service:
-    build:
-      context: .
-      dockerfile: twin-service/Dockerfile
-    profiles: ["lab"]
-    ports:
-      - "50051:50051"
-    restart: unless-stopped
-
-  astra:
-    build:
-      context: .
-      dockerfile: xapp/Dockerfile
-    env_file: .env
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./xapp/model/saved_models:/app/xapp/model/saved_models
-      - ./training/data:/app/training/data
-      - ./data:/app/data
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-  dashboard:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev"
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./dashboard:/app
-    depends_on:
-      - astra
-    restart: unless-stopped
+    networks:
+      - astra-net
 
   prometheus:
     image: prom/prometheus:latest
+    container_name: astra-prometheus
     profiles: ["lab"]
     ports:
       - "9091:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     restart: unless-stopped
+    networks:
+      - astra-net
 
   grafana:
     image: grafana/grafana:latest
+    container_name: astra-grafana
     profiles: ["lab"]
     ports:
       - "3001:3000"
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./monitoring/grafana:/var/lib/grafana/dashboards
     restart: unless-stopped
+    networks:
+      - astra-net
+
 networks:
-  default:
+  astra-net:
     name: astra-net
+
 volumes:
+  model-artifacts:
+  training-data:
+  dashboard-node-modules:
   mongodb-data:
   grafana-data:

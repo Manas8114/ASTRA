@@ -1,0 +1,44 @@
+# Docker ignore — keeps build context lean and fast
+# ──────────────────────────────────────────────────
+
+# Version control
+.git
+.gitignore
+
+# Python environments
+.venv
+__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.coverage
+*.pyo
+
+# Node
+dashboard/node_modules
+dashboard/dist
+
+# IDE / editor artifacts
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Secrets (never bake into image)
+.env
+
+# Large binaries / training outputs (mounted as volumes instead)
+training/data/
+xapp/model/saved_models/
+data/
+
+# Benchmarks and test-only code
+.benchmarks
+tests/
+
+# CI / CD
+.github
