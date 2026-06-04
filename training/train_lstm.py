@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import json
 import pickle
 import sys
@@ -16,6 +17,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from xapp.model.anomaly_detector import MinMaxScalerLite
 from xapp.model.lstm_autoencoder import LSTMAutoencoder
+from xapp.device import get_device, clear_gpu_cache
 
 
 def make_windows(data: np.ndarray, size: int = 30) -> np.ndarray:
@@ -35,14 +37,22 @@ def main() -> None:
     train = windows[:split]
     val = windows[split:]
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = get_device()
+    print(f"Training on: {device}")
     model = LSTMAutoencoder().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     loss_fn = nn.MSELoss()
+
+    # Use AMP for GPU training (halves memory usage)
+    use_amp = device.type == "cuda"
+    scaler_amp = torch.amp.GradScaler(enabled=use_amp)
+
     train_loader = DataLoader(
         TensorDataset(torch.from_numpy(train.astype(np.float32))),
         batch_size=64,
         shuffle=True,
+        pin_memory=(device.type == "cuda"),
+        num_workers=0,
     )
     val_tensor = torch.from_numpy(val.astype(np.float32)).to(device)
     best_val = float("inf")
@@ -52,24 +62,29 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "lstm_ae_best.pt"
 
-    for epoch in range(1, 51):
+    _max_epochs = int(os.getenv("ASTRA_LSTM_EPOCHS", "50"))
+    for epoch in range(1, _max_epochs + 1):
         model.train()
         train_loss = 0.0
         for (batch,) in train_loader:
-            batch = batch.to(device)
-            optimizer.zero_grad()
-            recon = model(batch)
-            loss = loss_fn(recon, batch)
-            loss.backward()
+            batch = batch.to(device, non_blocking=True)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                recon = model(batch)
+                loss = loss_fn(recon, batch)
+            scaler_amp.scale(loss).backward()
+            scaler_amp.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            scaler_amp.step(optimizer)
+            scaler_amp.update()
             train_loss += loss.item() * len(batch)
         train_loss /= len(train)
 
         model.eval()
         with torch.no_grad():
-            val_recon = model(val_tensor)
-            val_loss = float(loss_fn(val_recon, val_tensor).item())
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                val_recon = model(val_tensor)
+                val_loss = float(loss_fn(val_recon, val_tensor).item())
         print(f"epoch={epoch:02d} train_loss={train_loss:.6f} val_loss={val_loss:.6f}")
         if val_loss < best_val:
             best_val = val_loss
@@ -80,7 +95,7 @@ def main() -> None:
             if stale >= patience:
                 break
 
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     val_loader = DataLoader(
         TensorDataset(torch.from_numpy(val.astype(np.float32))),
@@ -90,8 +105,9 @@ def main() -> None:
     scores: list[np.ndarray] = []
     with torch.no_grad():
         for (batch,) in val_loader:
-            batch = batch.to(device)
-            recon = model(batch)
+            batch = batch.to(device, non_blocking=True)
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                recon = model(batch)
             scores.append(((recon - batch) ** 2).mean(dim=(1, 2)).cpu().numpy())
     mse = np.concatenate(scores)
     mean = float(mse.mean())

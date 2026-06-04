@@ -10,7 +10,7 @@ def export_to_onnx(model_path: str, output_path: str):
     try:
         from xapp.model.lstm_autoencoder import LSTMAutoencoder
         model = LSTMAutoencoder()
-        model.load_state_dict(torch.load(model_path, map_location="cpu"))
+        model.load_state_dict(torch.load(model_path, map_location="cpu", weights_only=True))
         model.eval()
     except Exception as e:
         print(f"Could not load model structure. Error: {e}")

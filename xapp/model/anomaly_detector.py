@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import pickle
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
@@ -9,6 +10,9 @@ from pathlib import Path
 import numpy as np
 
 from xapp.ingestion.kpi_schema import KPI_NAMES, KPIVector
+from xapp.device import get_device, safe_to_device, clear_gpu_cache
+
+log = logging.getLogger("astra.detector")
 
 
 @dataclass
@@ -55,27 +59,38 @@ class AnomalyDetector:
 
         import os
         self.mode = os.getenv("ASTRA_MODE", "demo")
-        
+        self.device = get_device()
+        log.info("AnomalyDetector using device: %s", self.device)
+
         if self.mode == "prod":
             import onnxruntime as ort
             onnx_path = Path("xapp/model/saved_models/lstm_ae_best.onnx")
             if onnx_path.exists():
-                self.onnx_session = ort.InferenceSession(str(onnx_path))
+                # Use GPU for ONNX if available
+                providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+                try:
+                    self.onnx_session = ort.InferenceSession(str(onnx_path), providers=providers)
+                except Exception:
+                    self.onnx_session = ort.InferenceSession(str(onnx_path))
+                log.info("ONNX session providers: %s", self.onnx_session.get_providers())
             else:
-                print(f"Warning: ONNX model not found at {onnx_path}")
+                log.warning("ONNX model not found at %s", onnx_path)
                 self.onnx_session = None
         else:
+            import torch
             from xapp.model.lstm_autoencoder import LSTMAutoencoder
-            self.model = LSTMAutoencoder().to("cpu")
+            self.model = safe_to_device(LSTMAutoencoder(), self.device)
             ae_path = Path("xapp/model/saved_models/lstm_ae_best.pt")
             self.model_loaded = False
             if ae_path.exists():
-                import torch
                 try:
-                    self.model.load_state_dict(torch.load(ae_path, map_location="cpu"))
+                    self.model.load_state_dict(
+                        torch.load(ae_path, map_location=self.device, weights_only=True)
+                    )
                     self.model_loaded = True
+                    log.info("Model loaded on %s from %s", self.device, ae_path)
                 except Exception as e:
-                    print(f"Warning: Failed to load model weights: {e}")
+                    log.warning("Failed to load model weights: %s", e)
             self.model.eval()
 
         self._declared_anomalies_history: list[datetime] = []
@@ -141,22 +156,31 @@ class AnomalyDetector:
         self, window: np.ndarray
     ) -> tuple[float, dict[str, float], dict[str, float]]:
         scaled = self.scaler.transform(window.astype(np.float32))
-        
+
         # Use actual model for reconstruction error
         if self.mode == "prod" and hasattr(self, 'onnx_session') and self.onnx_session is not None:
-            # ONNX Inference
+            # ONNX Inference (GPU-accelerated if CUDAExecutionProvider available)
             ort_inputs = {self.onnx_session.get_inputs()[0].name: np.expand_dims(scaled, axis=0)}
             reconstructed = self.onnx_session.run(None, ort_inputs)[0][0]
         else:
-            # PyTorch Inference
+            # PyTorch Inference — ensure tensors match model device
             if getattr(self, "model_loaded", False):
                 import torch
                 with torch.no_grad():
-                    input_tensor = torch.tensor(scaled).unsqueeze(0)
-                    reconstructed = self.model(input_tensor).squeeze(0).numpy()
+                    input_tensor = torch.tensor(scaled, device=self.device).unsqueeze(0)
+                    try:
+                        reconstructed = self.model(input_tensor).squeeze(0).cpu().numpy()
+                    except torch.cuda.OutOfMemoryError:
+                        log.warning("GPU OOM during inference — falling back to CPU")
+                        clear_gpu_cache()
+                        input_tensor = input_tensor.cpu()
+                        model_cpu = self.model.cpu()
+                        reconstructed = model_cpu(input_tensor).squeeze(0).numpy()
+                        # Move model back to GPU for next call
+                        self.model = safe_to_device(self.model, self.device)
             else:
                 reconstructed = np.full_like(scaled, 0.5)
-                
+
         per_feature = ((scaled - reconstructed) ** 2).mean(axis=0)
         total_mse = float(per_feature.mean())
         total = float(per_feature.sum()) or 1.0

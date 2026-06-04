@@ -13,5 +13,7 @@ torch>=2.0.0
 onnx>=1.15.0
 onnxruntime>=1.17.0
 grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.21.0
 redis>=5.0.0
 prometheus-fastapi-instrumentator>=7.0.0

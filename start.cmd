@@ -51,13 +51,27 @@ if not exist "xapp\model\saved_models" mkdir xapp\model\saved_models
 if not exist "training\data" mkdir training\data
 echo  [OK] Data directories ready.
 
+:: ── Detect GPU ────────────────────────────────────────────────────────────────
+set GPU_MODE=false
+nvidia-smi >nul 2>&1
+if %errorlevel% equ 0 (
+    echo  [OK] NVIDIA GPU detected — enabling GPU acceleration.
+    set GPU_MODE=true
+) else (
+    echo  [INFO] No NVIDIA GPU detected — running in CPU mode.
+)
+
 :: ── Pull / build images ──────────────────────────────────────────────────────
 echo.
 echo  [BUILD] Building Docker images (first run trains the ML model — ~3-5 min)...
 echo  This is a one-time operation. Subsequent starts take ^<30 seconds.
 echo.
 
-docker compose build --parallel
+if "!GPU_MODE!"=="true" (
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml build --parallel
+) else (
+    docker compose build --parallel
+)
 if %errorlevel% neq 0 (
     echo.
     echo  [ERROR] Docker build failed. Check the output above.
@@ -65,12 +79,16 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 echo.
-echo  [OK] Images built successfully.
+echo  [OK] Images built successfully. GPU mode: !GPU_MODE!
 
 :: ── Start the stack ──────────────────────────────────────────────────────────
 echo.
 echo  [START] Starting ASTRA stack...
-docker compose up -d
+if "!GPU_MODE!"=="true" (
+    docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+) else (
+    docker compose up -d
+)
 if %errorlevel% neq 0 (
     echo.
     echo  [ERROR] Failed to start containers.

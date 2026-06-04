@@ -21,6 +21,7 @@ Output:
   training/data/forecast_eval.json  (val loss, horizon accuracy per KPI)
 """
 
+import os
 import sys
 sys.path.insert(0, ".")
 
@@ -34,21 +35,23 @@ import logging
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 
+from xapp.device import get_device, clear_gpu_cache
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(name)s  %(levelname)s  %(message)s",
 )
 log = logging.getLogger("train_forecast")
 
-# ── Config ───────────────────────────────────────────────────────────────────
+# ── Config (overrideable via env vars for fast Docker builds) ─────────────────
 INPUT_LEN      = 30
-FORECAST_LEN   = 300
+FORECAST_LEN   = int(os.getenv("ASTRA_FORECAST_LEN", "300"))   # 30 for Docker, 300 for full
 BATCH_SIZE     = 32
-EPOCHS         = 30
+EPOCHS         = int(os.getenv("ASTRA_FORECAST_EPOCHS", "30"))
 LR             = 5e-4
 VAL_SPLIT      = 0.15
-PATIENCE       = 5
-DEVICE         = "cuda" if torch.cuda.is_available() else "cpu"
+PATIENCE       = min(3, EPOCHS)   # patience scales with epoch budget
+DEVICE         = get_device()
 
 DATA_PATH      = Path("training/data/normal_kpis.csv")
 SCALER_PATH    = Path("training/data/scaler.pkl")
@@ -98,15 +101,16 @@ def main():
     X_tr, X_va = X[:split], X[split:]
     Y_tr, Y_va = Y[:split], Y[split:]
 
+    use_pin = DEVICE.type == "cuda"
     tr_ds = TensorDataset(torch.from_numpy(X_tr), torch.from_numpy(Y_tr))
     va_ds = TensorDataset(torch.from_numpy(X_va), torch.from_numpy(Y_va))
-    tr_dl = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=True)
-    va_dl = DataLoader(va_ds, batch_size=BATCH_SIZE)
+    tr_dl = DataLoader(tr_ds, batch_size=BATCH_SIZE, shuffle=True, pin_memory=use_pin)
+    va_dl = DataLoader(va_ds, batch_size=BATCH_SIZE, pin_memory=use_pin)
 
-    # ── Load frozen autoencoder ──────────────────────────────────────────
+    # ── Load frozen autoencoder ──────────────────────────────────────────────────
     from xapp.model.lstm_autoencoder import LSTMAutoencoder  # existing model
     ae = LSTMAutoencoder().to(DEVICE)
-    ae.load_state_dict(torch.load(AE_MODEL_PATH, map_location=DEVICE))
+    ae.load_state_dict(torch.load(AE_MODEL_PATH, map_location=DEVICE, weights_only=True))
     ae.eval()
     for p in ae.parameters():
         p.requires_grad = False
@@ -122,7 +126,9 @@ def main():
     )
     loss_fn = nn.MSELoss()
 
-    # ── Training loop ────────────────────────────────────────────────────
+    # ── Training loop (with AMP for GPU) ────────────────────────────────────
+    use_amp = DEVICE.type == "cuda"
+    scaler_amp = torch.amp.GradScaler(enabled=use_amp)
     best_val = float("inf")
     patience_counter = 0
     history = {"train_loss": [], "val_loss": []}
@@ -132,16 +138,19 @@ def main():
         head.train()
         tr_loss = 0.0
         for xb, yb in tr_dl:
-            xb, yb = xb.to(DEVICE), yb.to(DEVICE)
+            xb, yb = xb.to(DEVICE, non_blocking=True), yb.to(DEVICE, non_blocking=True)
             with torch.no_grad():
                 latent = ae.encode(xb)              # (B, 8)
             last_kpi = xb[:, -1, :]                 # (B, 6)
-            pred = head(latent, last_kpi)            # (B, 300, 6)
-            loss = loss_fn(pred, yb)
-            opt.zero_grad()
-            loss.backward()
+            with torch.amp.autocast(device_type=DEVICE.type, enabled=use_amp):
+                pred = head(latent, last_kpi)            # (B, 300, 6)
+                loss = loss_fn(pred, yb)
+            opt.zero_grad(set_to_none=True)
+            scaler_amp.scale(loss).backward()
+            scaler_amp.unscale_(opt)
             torch.nn.utils.clip_grad_norm_(head.parameters(), 1.0)
-            opt.step()
+            scaler_amp.step(opt)
+            scaler_amp.update()
             tr_loss += loss.item() * len(xb)
         tr_loss /= len(tr_ds)
 
@@ -150,11 +159,12 @@ def main():
         va_loss = 0.0
         with torch.no_grad():
             for xb, yb in va_dl:
-                xb, yb = xb.to(DEVICE), yb.to(DEVICE)
-                latent = ae.encode(xb)
-                last_kpi = xb[:, -1, :]
-                pred = head(latent, last_kpi)
-                va_loss += loss_fn(pred, yb).item() * len(xb)
+                xb, yb = xb.to(DEVICE, non_blocking=True), yb.to(DEVICE, non_blocking=True)
+                with torch.amp.autocast(device_type=DEVICE.type, enabled=use_amp):
+                    latent = ae.encode(xb)
+                    last_kpi = xb[:, -1, :]
+                    pred = head(latent, last_kpi)
+                    va_loss += loss_fn(pred, yb).item() * len(xb)
         va_loss /= len(va_ds)
 
         sched.step(va_loss)
@@ -176,14 +186,15 @@ def main():
 
     # ── Per-KPI horizon accuracy ─────────────────────────────────────────
     head.eval()
-    head.load_state_dict(torch.load(OUT_PATH, map_location=DEVICE))
+    head.load_state_dict(torch.load(OUT_PATH, map_location=DEVICE, weights_only=True))
 
     all_preds, all_trues = [], []
     with torch.no_grad():
         for xb, yb in va_dl:
-            xb = xb.to(DEVICE)
-            latent = ae.encode(xb)
-            pred = head(latent, xb[:, -1, :]).cpu().numpy()
+            xb = xb.to(DEVICE, non_blocking=True)
+            with torch.amp.autocast(device_type=DEVICE.type, enabled=use_amp):
+                latent = ae.encode(xb)
+                pred = head(latent, xb[:, -1, :]).cpu().numpy()
             all_preds.append(pred)
             all_trues.append(yb.numpy())
 

@@ -37,6 +37,8 @@ from pathlib import Path
 import json
 import logging
 
+from xapp.device import get_device, safe_to_device, clear_gpu_cache
+
 log = logging.getLogger("astra.forecast")
 
 FORECAST_HORIZON = 300      # 5 minutes at 1s resolution
@@ -160,10 +162,19 @@ class ForecastHead:
         "slice_utilisation_pct",
     ]
 
-    def __init__(self, anomaly_detector, device: str = "cpu"):
+    def __init__(self, anomaly_detector, device: str | None = None):
         self.detector = anomaly_detector
-        self.device = torch.device(device)
+        # Use detector's device for consistency, else centralized selection
+        if device is not None:
+            self.device = torch.device(device)
+        else:
+            d = getattr(anomaly_detector, 'device', None)
+            if isinstance(d, (torch.device, str)):
+                self.device = torch.device(d)
+            else:
+                self.device = get_device()
         self._last_result = None
+        log.info("ForecastHead using device: %s", self.device)
 
         # Load threshold
         if THRESHOLD_PATH.exists():
@@ -175,14 +186,14 @@ class ForecastHead:
             self.threshold = 0.08
             self.threshold_warn = 0.06
 
-        # Build forecast net
-        self.net = ForecastHeadNet().to(self.device)
+        # Build forecast net on the same device
+        self.net = safe_to_device(ForecastHeadNet(), self.device)
 
         if FORECAST_MODEL_PATH.exists():
             self.net.load_state_dict(
-                torch.load(FORECAST_MODEL_PATH, map_location=self.device)
+                torch.load(FORECAST_MODEL_PATH, map_location=self.device, weights_only=True)
             )
-            log.info("ForecastHead: loaded weights from %s", FORECAST_MODEL_PATH)
+            log.info("ForecastHead: loaded weights from %s on %s", FORECAST_MODEL_PATH, self.device)
         else:
             log.warning(
                 "ForecastHead: no saved weights found at %s — "
@@ -211,8 +222,19 @@ class ForecastHead:
         latent = self.detector.model.encode(t)           # (1, 8)
         last_kpi = t[:, -1, :]                           # (1, 6) last observed
 
-        # Run forecast head
-        forecast = self.net(latent, last_kpi)            # (1, horizon, 6)
+        # Run forecast head with OOM fallback
+        try:
+            forecast = self.net(latent, last_kpi)            # (1, horizon, 6)
+        except torch.cuda.OutOfMemoryError:
+            log.warning("GPU OOM in ForecastHead — falling back to CPU")
+            clear_gpu_cache()
+            latent = latent.cpu()
+            last_kpi = last_kpi.cpu()
+            net_cpu = self.net.cpu()
+            forecast = net_cpu(latent, last_kpi)
+            # Move net back to GPU for next call
+            self.net = safe_to_device(self.net, self.device)
+
         trajectory = forecast.squeeze(0).cpu().numpy()   # (horizon, 6)
 
         # Compute risk curve: MSE of each forecast step vs the reconstruction
