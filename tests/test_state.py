@@ -1,5 +1,4 @@
-import pytest
-from xapp.state import LiveState, utc_now
+from xapp.state import LiveState
 
 def test_live_state_snapshot():
     state = LiveState(cell_id="test_cell")

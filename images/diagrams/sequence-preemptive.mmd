@@ -1,0 +1,67 @@
+%% ASTRA — Sequence: Preemptive Healing Loop
+%% Render at: https://mermaid.live
+
+sequenceDiagram
+    autonumber
+    participant KPI as KPI Stream
+    participant BUF as KPI Buffer\n(30-sample window)
+    participant AE as LSTM Autoencoder\nAnomalyDetector
+    participant FC as ForecastHead\nSeq2Seq on Latent
+    participant PH as PreemptiveHealer
+    participant CLF as AnomalyClassifier
+    participant TW as Digital Twin\nM/M/1 Simulator
+    participant ENG as HealingActionEngine
+    participant E2C as E2 RC Client
+    participant WS as WebSocket Hub
+    participant UI as React NOC Dashboard
+    
+    Note over KPI,UI: === PREEMPTIVE HEALING LOOP (runs in parallel, 60s horizon) ===
+    
+    loop Every 1 second (when window ready)
+        KPI->>BUF: Push KPI sample
+        BUF->>BUF: Maintain sliding window (30×6)
+        
+        par Reactive Path
+            BUF->>AE: window
+            AE-->>BUF: mse, per_feature, attention
+        and Preemptive Path
+            BUF->>FC: window (normalized)
+            AE->>FC: latent_vector (8-dim from encoder)
+            FC->>FC: Autoregressive decode\n300 steps × 6 KPIs
+            FC-->>PH: ForecastResult\n{trajectory[300,6], risk_curve[300], preemptive_alert, seconds_to_anomaly, confidence, at_risk_kpis, summary}
+            
+            alt Preemptive Alert (risk_curve[0:60] > 2σ threshold)
+                PH->>WS: FORECAST_UPDATE event\n{preemptive_alert, seconds_to_anomaly, at_risk_kpis, confidence, risk_curve_60s, summary}
+                WS->>UI: Update ForecastPanel — ⚠ ALERT banner
+                
+                PH->>CLF: evaluate(forecast, window)
+                CLF->>CLF: Classify predicted anomaly type
+                CLF-->>PH: anomaly_type, confidence
+                
+                PH->>TW: simulate_action(candidate, current_kpis, projected_mse)
+                TW-->>PH: SimResult{approved, improvement, queue_metrics}
+                
+                alt Twin Approves Preemptive Action
+                    PH->>ENG: execute_raw(action_type, params, mode="PREEMPTIVE")
+                    ENG->>E2C: send_control(action_type, params)
+                    E2C-->>ENG: {sent: true}
+                    
+                    WS->>UI: HEALING_APPLIED (preemptive)\n{action_type, params, mode: "PREEMPTIVE", forecast_confidence}
+                    UI->>UI: Show preemptive heal badge
+                    
+                    Note over PH,UI: MTTR effectively NEGATIVE —\nhealed before anomaly materialized
+                else Twin Rejects
+                    PH->>WS: ESCALATION (preemptive rejected)
+                    WS->>UI: Show escalation
+                end
+            else Nominal Trajectory
+                PH->>WS: FORECAST_UPDATE event\n{preemptive_alert: false, confidence, summary: "✓ NOMINAL"}
+                WS->>UI: Update ForecastPanel — green status
+            end
+        end
+    end
+    
+    %% ForecastHead Internal Detail
+    Note right of FC: ForecastHead Architecture:\n- Frozen encoder (8-dim latent)\n- 2-layer LSTM decoder (32 hidden)\n- Linear(16→6) per timestep\n- Teacher-forced training\n- Horizon: 300 steps (5 min)\n- Alert window: 60 steps (60s)
+    
+    Note right of PH: PreemptiveHealer Logic:\n1. Forecast risk curve\n2. If alert within 60s:\n   a. Classify predicted anomaly\n   b. Get candidate action\n   c. Simulate in twin\n   d. If approved → execute\n3. Broadcast forecast to dashboard

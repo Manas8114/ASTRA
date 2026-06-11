@@ -1,0 +1,171 @@
+replicaCount: 1
+
+image:
+  repository: astra-xapp
+  pullPolicy: IfNotPresent
+  tag: "dev"
+
+service:
+  type: NodePort
+  port: 8000
+
+twin:
+  image:
+    repository: astra-twin
+    tag: "dev"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+redis:
+  image:
+    repository: redis
+    tag: "7.2-alpine"
+    pullPolicy: IfNotPresent
+  storageSize: 1Gi
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+env:
+  ASTRA_MODE: "dev"
+  LOG_LEVEL: "DEBUG"
+  REDIS_HOST: "redis-master"
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# ── Ingress ────────────────────────────────────────────────────────────────
+ingress:
+  className: nginx
+  enabled: false
+  hosts:
+    - astra-xapp.local
+  paths:
+    - path: /
+      pathType: Prefix
+      port: 8000
+  tls:
+    enabled: false
+    secretName: ""
+    hosts: []
+  annotations: {}
+  proxyBodySize: "10m"
+  proxyReadTimeout: "60"
+  proxySendTimeout: "60"
+
+# ── HPA (Horizontal Pod Autoscaler) ───────────────────────────────────────
+hpa:
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+    cpu:
+      enabled: false
+      targetUtilization: 70
+    memory:
+      enabled: false
+      targetUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+
+# ── Twin HPA ───────────────────────────────────────────────────────────────
+twin:
+  hpa:
+    minReplicas: 1
+    maxReplicas: 1
+    metrics:
+      cpu:
+        enabled: false
+        targetUtilization: 70
+      memory:
+        enabled: false
+        targetUtilization: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 0
+
+# ── Pod Disruption Budget ─────────────────────────────────────────────────
+pdb:
+  minAvailable: 1
+
+twin:
+  pdb:
+    minAvailable: 1
+
+# ── Network Policy ─────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: false
+  egress:
+    externalEnabled: false
+    allowedNamespaces:
+      - kube-system
+      - monitoring
+
+# ── Secrets ────────────────────────────────────────────────────────────────
+secrets: {}
+
+# ── Prometheus Rules ──────────────────────────────────────────────────────
+prometheusRule:
+  enabled: false
+  prometheusLabel: "prometheus"
+  alerts:
+    anomalyRateHigh:
+      enabled: false
+    healingFailure:
+      enabled: false
+    forecastDrift:
+      enabled: false
+    mseRegression:
+      enabled: false
+    e2ConnectionDown:
+      enabled: false
+    redisDown:
+      enabled: false
+    forecastErrorHigh:
+      enabled: false
+    circuitBreakerOpen:
+      enabled: false
+    websocketQueueHigh:
+      enabled: false
+    driftDetected:
+      enabled: false
+
+# ── Observability ──────────────────────────────────────────────────────────
+observability:
+  enableTracing: false
+  otelEndpoint: ""
+  logLevel: DEBUG
+  logFormat: console

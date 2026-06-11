@@ -1,0 +1,40 @@
+name: ASTRA Model CI/CD
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'xapp/model/**'
+      - 'scripts/setup_models.py'
+  schedule:
+    - cron: '0 0 * * 0' # Weekly retraining
+
+jobs:
+  train-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install uv
+          uv sync
+
+      - name: Run Model Training
+        run: uv run python scripts/setup_models.py
+
+      - name: Upload Model Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: astra-models
+          path: xapp/model/saved_models/
+
+      - name: Push to Model Registry
+        run: |
+          echo "Simulating push to MLflow/S3..."
+          # aws s3 sync xapp/model/saved_models/ s3://astra-models/latest/

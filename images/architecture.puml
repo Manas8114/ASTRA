@@ -1,0 +1,188 @@
+@startuml ASTRA_Architecture
+!define AWSPUML https://raw.githubusercontent.com/awslabs/aws-icons-for-plantuml/v14.0/dist
+!includeurl AWSPUML/AWSCommon.puml
+!includeurl AWSPUML/Networking/Client.puml
+!includeurl AWSPUML/Database/AmazonRDS.puml
+!includeurl AWSPUML/Compute/EC2Instance.puml
+
+skinparam backgroundColor #0d1117
+skinparam componentStyle rectangle
+skinparam rectangle {
+    BackgroundColor<<kpi>> #0d1b2a
+    BorderColor<<kpi>> #38bdf8
+    FontColor<<kpi>> #fff
+    BackgroundColor<<ml>> #1e1b4b
+    BorderColor<<ml>> #a78bfa
+    FontColor<<ml>> #fff
+    BackgroundColor<<twin>> #14532d
+    BorderColor<<twin>> #4ade80
+    FontColor<<twin>> #fff
+    BackgroundColor<<heal>> #7c2d12
+    BorderColor<<heal>> #fb923c
+    FontColor<<heal>> #fff
+    BackgroundColor<<coord>> #422006
+    BorderColor<<coord>> #fbbf24
+    FontColor<<coord>> #fff
+    BackgroundColor<<persist>> #1f2937
+    BorderColor<<persist>> #6b7280
+    FontColor<<persist>> #fff
+    BackgroundColor<<ui>> #0c4a6e
+    BorderColor<<ui>> #06b6d4
+    FontColor<<ui>> #fff
+    BackgroundColor<<infra>> #374151
+    BorderColor<<infra>> #9ca3af
+    FontColor<<infra>> #fff
+    BackgroundColor<<ext>> #450a0a
+    BorderColor<<ext>> #ef4444
+    FontColor<<ext>> #fff
+}
+
+package "External Telecom Systems" <<ext>> {
+    [gNB / eNB\nE2 Node] as GNB
+    [Open5GS Core\nKPI Source] as OPEN5GS
+    [Prometheus\nKPI Metrics] as PROM
+    [Near-RT RIC\nFlexRIC/O-RAN SC] as RIC
+    [Non-RT RIC / SMO\nA1 Policy Mgmt] as SMO
+}
+
+package "KPI Ingestion Layer" <<kpi>> {
+    [KPI Adapter Factory] as ADAPTER
+    [Dev Synthetic KPIs] as DEV
+    [Open5GS JSONL Watcher] as FILE
+    [Prometheus Querier] as PROM_AD
+    [E2 KPM Subscription] as E2_KPM
+    [KPI Buffer\n30-sample window] as BUFFER
+}
+
+package "ML Intelligence" <<ml>> {
+    [LSTM Autoencoder\nPyTorch/ONNX INT8] as DETECTOR
+    [MinMaxScaler] as SCALER
+    [Dynamic Threshold\n3-sigma + consec=5] as THRESH
+    [AttentionExtractor\nPer-Feature MSE %] as XAI
+    [AnomalyClassifier\n5 Types] as CLASSIFIER
+    [ForecastHead\nSeq2Seq on Latent] as FORECAST
+    [PreemptiveHealer\n60s Risk Curve] as PREEMPT
+    [EWC Continual Learning\nFisher + Memory] as EWC
+}
+
+package "Digital Twin (M/M/1)" <<twin>> {
+    [Local M/M/1 Simulator] as LOCAL_TWIN
+    [gRPC Twin Service\nCircuit Breaker] as GRPC_TWIN
+    [Action→λ/μ Mapping] as ACTION_MAP
+    [Approval Gate\n≥20% Improvement] as APPROVAL
+}
+
+package "Healing & E2 Control" <<heal>> {
+    [HealingActionEngine\nCandidate + Cooldown] as ENGINE
+    [DemoE2RCClient] as MOCK_E2
+    [RealE2RCClient\nASN.1 PER + SCTP] as REAL_E2
+    [Rollback Metadata] as ROLLBACK
+}
+
+package "Multi-Cell Coordination" <<coord>> {
+    [Topology.json] as TOPO
+    [MultiCellCoordinator\nAsync HTTP] as COORDINATOR
+    [Neighbor xApps] as NEIGHBOR
+}
+
+package "State & Persistence" <<persist>> {
+    [LiveState\nBounded Deques] as LIVE
+    [Redis Streams/Hashes] as REDIS
+    [PostgreSQL Audit] as PG
+    [MLflow Registry] as MLFLOW
+}
+
+package "API Layer" <<ui>> {
+    [FastAPI REST] as REST
+    [WebSocket Hub\nBackpressure] as WS
+    [A1 Policy Receiver] as A1
+    [JWT/mTLS Auth] as AUTH
+}
+
+package "React NOC Dashboard" <<ui>> {
+    [TopologyView] as TOPO_UI
+    [KPIFeed] as KPI_UI
+    [XAIAttribution] as XAI_UI
+    [DTSimView] as TWIN_UI
+    [HealingLog] as HEAL_UI
+    [ForecastPanel] as FORE_UI
+}
+
+package "Kubernetes (Helm)" <<infra>> {
+    [astra-xapp Pod] as XAPP_POD
+    [twin-service Pod] as TWIN_POD
+    [Redis StatefulSet] as REDIS_POD
+    [PostgreSQL] as PG_POD
+    [Prometheus/Grafana] as MONITOR
+    [NetworkPolicies] as NETPOL
+    [cert-manager mTLS] as CERT
+}
+
+' Data Flows
+GNB -[#ef4444,dashed]-> E2_KPM : E2 KPM
+OPEN5GS --> FILE : JSONL
+PROM --> PROM_AD : PromQL
+DEV --> ADAPTER
+FILE --> ADAPTER
+PROM_AD --> ADAPTER
+E2_KPM --> ADAPTER
+ADAPTER --> BUFFER
+
+BUFFER --> SCALER --> DETECTOR
+DETECTOR --> THRESH
+THRESH -[#4ade80]-> XAI : Anomaly
+THRESH --> BUFFER : Normal
+XAI --> CLASSIFIER
+DETECTOR -[#a78bfa]-> FORECAST : Latent Vector
+BUFFER --> FORECAST : Window
+FORECAST --> PREEMPT : Risk Curve
+PREEMPT --> CLASSIFIER : Preemptive Alert
+CLASSIFIER --> ENGINE : Anomaly Type
+XAI --> LIVE : Attribution
+CLASSIFIER --> LIVE : Type
+
+ENGINE --> ACTION_MAP : Candidate
+LIVE --> ACTION_MAP : Current KPIs
+ACTION_MAP --> LOCAL_TWIN
+ACTION_MAP --> GRPC_TWIN
+LOCAL_TWIN --> APPROVAL
+GRPC_TWIN --> APPROVAL
+APPROVAL -[#4ade80]-> ENGINE : Approved
+APPROVAL -[#ef4444]-> LIVE : Rejected
+
+ENGINE --> MOCK_E2
+ENGINE --> REAL_E2
+REAL_E2 -[#ef4444,dashed]-> GNB : SCTP E2AP
+ENGINE --> LIVE : Healing Event
+ENGINE --> ROLLBACK
+
+ENGINE --> COORDINATOR : Heal Applied
+COORDINATOR --> TOPO
+COORDINATOR -[#fbbf24]-> NEIGHBOR : HTTP Broadcast
+
+LIVE -[#6b7280,dashed]-> REDIS : Async
+LIVE -[#6b7280,dashed]-> PG : Batch
+DETECTOR -[#a78bfa,dashed]-> MLFLOW : Model Load
+MLFLOW -[#a78bfa,dashed]-> A1 : A1 Policy
+
+REST --> LIVE
+WS --> LIVE
+A1 --> LIVE
+AUTH --> REST
+AUTH --> WS
+WS --> TOPO_UI
+WS --> KPI_UI
+WS --> XAI_UI
+WS --> TWIN_UI
+WS --> HEAL_UI
+WS --> FORE_UI
+
+INFRA -[#9ca3af,dashed]-> XAPP_POD
+INFRA -[#9ca3af,dashed]-> TWIN_POD
+INFRA -[#9ca3af,dashed]-> REDIS_POD
+INFRA -[#9ca3af,dashed]-> PG_POD
+INFRA -[#9ca3af,dashed]-> MONITOR
+INFRA -[#9ca3af,dashed]-> NETPOL
+INFRA -[#9ca3af,dashed]-> CERT
+
+@enduml

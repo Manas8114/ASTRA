@@ -1,0 +1,71 @@
+%% ASTRA — Topology & Multi-Cell Coordination Detail
+%% Render at: https://mermaid.live
+
+flowchart TB
+    subgraph TOPOLOGY [Network Topology (topology.json)]
+        direction TB
+        CELL_001[cell_001\nMACRO\nx:200, y:150]
+        CELL_002[cell_002\nSMALL\nx:200, y:30]
+        CELL_003[cell_003\nSMALL\nx:320, y:220]
+        CELL_004[cell_004\nSMALL\nx:80, y:220]
+        
+        CELL_001 --- CELL_002
+        CELL_001 --- CELL_003
+        CELL_001 --- CELL_004
+        CELL_003 --- CELL_004
+    end
+    
+    subgraph COORD [MultiCellCoordinator Logic]
+        direction TB
+        TRIGGER[Healing Applied\non cell_001]
+        NEIGHBORS[neighbors(cell_001)\n→ [cell_002, cell_003, cell_004]]
+        BROADCAST[Async HTTP POST\nto each neighbor\n/cordination endpoint]
+        PAYLOAD[Payload per neighbor:\n{\n  source_cell: "cell_001",\n  healing_action: "ADMISSION_CONTROL",\n  parameter: {pct: 0.20},\n  expected_load_shift: 0.15\n}]
+        RECEIVE[Neighbor xApp receives\n→ Pre-adapt thresholds\n→ Adjust admission control\n→ Log coordination event]
+    end
+    
+    subgraph DASHBOARD [TopologyView.jsx Rendering]
+        direction TB
+        SVG[SVG Canvas 400×300\n<defs> paths for links\n<animateMotion> for packets]
+        NODES[Cell Nodes\nMacro: r=16\nSmall: r=12\nPulse animation on anomaly/heal]
+        LINKS[Links as <line>\nPacket animation: <circle>\n<animateMotion dur=0.8s repeatCount=3>]
+        INSPECTOR[Cell Inspector Panel\nOn click → shows:\n- Status badge (normal/anomalous/healing)\n- E2 CONNECTED badge\n- 6 Real-time KPIs\n- From latest WebSocket event]
+    end
+    
+    subgraph STATE [Per-Cell State Tracking]
+        direction TB
+        LIVE_MULTI[LiveState per cell_id\ncell_001, cell_002, cell_003, cell_004\nEach: own KPI history, anomalies, heals]
+        WS_MULTI[WebSocket per-cell events\ncorrelation_id links\nKPI_UPDATE + ANOMALY + HEALING]
+    end
+    
+    %% Connections
+    TRIGGER --> NEIGHBORS
+    NEIGHBORS --> BROADCAST
+    BROADCAST --> PAYLOAD
+    PAYLOAD --> RECEIVE
+    
+    CELL_001 -.->|heal applied| TRIGGER
+    RECEIVE -.->|threshold updated| CELL_002
+    RECEIVE -.->|threshold updated| CELL_003
+    RECEIVE -.->|threshold updated| CELL_004
+    
+    LIVE_MULTI --> WS_MULTI
+    WS_MULTI --> SVG
+    WS_MULTI --> NODES
+    WS_MULTI --> LINKS
+    WS_MULTI --> INSPECTOR
+    
+    %% Coordination Events on Dashboard
+    COORD_EVENT[coordination\nMULTICELL_BROADCAST] -.-> LINKS
+    COORD_EVENT -.-> NODES
+    
+    %% Styling
+    classDef topo fill:#422006,stroke:#fbbf24,stroke-width:2px,color:#fff
+    classDef coord fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff
+    classDef dash fill:#0c4a6e,stroke:#06b6d4,stroke-width:2px,color:#fff
+    classDef state fill:#1f2937,stroke:#6b7280,stroke-width:2px,color:#fff
+    
+    class CELL_001,CELL_002,CELL_003,CELL_004 topo
+    class TRIGGER,NEIGHBORS,BROADCAST,PAYLOAD,RECEIVE coord
+    class SVG,NODES,LINKS,INSPECTOR,COORD_EVENT dash
+    class LIVE_MULTI,WS_MULTI state

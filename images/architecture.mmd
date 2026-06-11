@@ -1,0 +1,200 @@
+%% ASTRA Autonomous 5G RAN Self-Healing xApp — Complete Architecture
+%% Render at: https://mermaid.live | Embed in GitHub README/docs
+%% Export SVG/PNG from mermaid.live → save to images/diagrams/
+
+flowchart TB
+    %% ==================== STYLES ====================
+    classDef kpi fill:#0d1b2a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    classDef ml fill:#1e1b4b,stroke:#a78bfa,stroke-width:2px,color:#fff
+    classDef twin fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#fff
+    classDef heal fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff
+    classDef coord fill:#422006,stroke:#fbbf24,stroke-width:2px,color:#fff
+    classDef persist fill:#1f2937,stroke:#6b7280,stroke-width:2px,color:#fff
+    classDef ui fill:#0c4a6e,stroke:#06b6d4,stroke-width:2px,color:#fff
+    classDef infra fill:#374151,stroke:#9ca3af,stroke-width:1px,stroke-dasharray: 5 5,color:#fff
+    classDef ext fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff
+
+    %% ==================== EXTERNAL SYSTEMS ====================
+    subgraph EXT [External Telecom Systems]
+        direction TB
+        GNB[(gNB / eNB\nE2 Node)]
+        OPEN5GS[Open5GS Core\nKPI Source]
+        PROM[Prometheus\nKPI Metrics]
+        RIC[Near-RT RIC\nFlexRIC / O-RAN SC]
+        SMO[Non-RT RIC / SMO\nA1 Policy Mgmt]
+    end
+    class GNB,OPEN5GS,PROM,RIC,SMO ext
+
+    %% ==================== KPI INGESTION LAYER ====================
+    subgraph INGEST [KPI Ingestion Layer]
+        direction TB
+        ADAPTER{KPI Adapter\nFactory}
+        DEV[Dev Mode\nSynthetic KPIs]
+        FILE[Open5GS JSONL\nFile Watcher]
+        PROM_AD[Prometheus\nQuerier]
+        E2_KPM[E2 KPM\nSubscription\nricxappframe]
+        BUFFER[(KPI Buffer\n30-sample sliding window\n1Hz per cell)]
+    end
+    class ADAPTER,DEV,FILE,PROM_AD,E2_KPM,BUFFER kpi
+
+    %% ==================== ML DETECTION PIPELINE ====================
+    subgraph ML [Anomaly Detection & Intelligence]
+        direction TB
+        DETECTOR[LSTM Autoencoder\nAnomalyDetector\nPyTorch / ONNX INT8]
+        SCALER[MinMaxScaler\nNormalization]
+        THRESH[Dynamic Threshold\n3-sigma + consecutive=5]
+        XAI[AttentionExtractor\nPer-Feature MSE\n% Contribution]
+        CLASSIFIER[AnomalyClassifier\nCONGESTION | LATENCY\nLOSS | SLICE | NOVEL]
+        FORECAST[ForecastHead\nSeq2Seq on Latent\n300-step horizon]
+        PREEMPT[PreemptiveHealer\nRisk Curve → Action]
+        EWC[EWC Continual Learning\nFisher Diagonal\nAnomalyMemoryBuffer]
+    end
+    class DETECTOR,SCALER,THRESH,XAI,CLASSIFIER,FORECAST,PREEMPT,EWC ml
+
+    %% ==================== DIGITAL TWIN ====================
+    subgraph TWIN [Digital Twin — M/M/1 Queuing Model]
+        direction TB
+        LOCAL_TWIN[Local M/M/1 Simulator\nρ=λ/μ, Lq=ρ²/(1-ρ)\nW=1/μ(1-ρ), BLER∝ρ^1.5]
+        GRPC_TWIN[gRPC Twin Service\nPort 50051\nCircuit Breaker\nCLOSED/OPEN/HALF]
+        ACTION_MAP[Action → λ/μ Mapping\nADMISSION: λ↓\nSLICE: λ↓ μ↑\nPOWER: μ↑ RSRP↑]
+        APPROVAL[Approval Gate\nImprovement ≥ 20%\nQueue Metrics Output]
+    end
+    class LOCAL_TWIN,GRPC_TWIN,ACTION_MAP,APPROVAL twin
+
+    %% ==================== HEALING & E2 CONTROL ====================
+    subgraph HEAL [Healing Action Engine]
+        direction TB
+        ENGINE[HealingActionEngine\nCandidate Mapping\nCooldown 30s\nBlast Radius Limits]
+        MOCK_E2[DemoE2RCClient\nMock Success]
+        REAL_E2[RealE2RCClient\nricxappframe + e2sm_rc\nASN.1 PER Encoding\nSCTP Transport]
+        ROLLBACK[Rollback Metadata\nInverse Parameters]
+    end
+    class ENGINE,MOCK_E2,REAL_E2,ROLLBACK heal
+
+    %% ==================== MULTI-CELL COORDINATION ====================
+    subgraph COORD [Multi-Cell Coordination]
+        direction TB
+        TOPO[Topology.json\nNeighbor Graph]
+        COORDINATOR[MultiCellCoordinator\nAsync HTTP Broadcast\nExpected Load Shift]
+        NEIGHBOR[Neighbor xApps\nPre-adapt Thresholds]
+    end
+    class TOPO,COORDINATOR,NEIGHBOR coord
+
+    %% ==================== STATE & PERSISTENCE ====================
+    subgraph STATE [State Management & Persistence]
+        direction TB
+        LIVE[LiveState\nIn-Memory\nBounded Deques]
+        REDIS[(Redis Streams/Hashes\nKPI History\nAnomalies\nAttribution)]
+        PG[(PostgreSQL\nAudit Trail\nAnomalies, Heals,\nModel Deployments)]
+        MLFLOW[MLflow Registry\nModel Versions\nStaging/Production]
+    end
+    class LIVE,REDIS,PG,MLFLOW persist
+
+    %% ==================== API & DASHBOARD ====================
+    subgraph API [REST / WebSocket / A1 API]
+        direction TB
+        REST[FastAPI REST\n/health /policy /inject\n/kpis /anomalies /healings]
+        WS[WebSocket Hub\nPer-Connection Queues\nBackpressure\nCorrelation IDs]
+        A1[A1 Policy receiver\nThreshold Update\nModel Hot-Swap]
+        AUTH[JWT/OAuth2\nmTLS Ready\nAPI Key Fallback]
+    end
+    class REST,WS,A1,AUTH ui
+
+    subgraph UI [React NOC Dashboard]
+        direction TB
+        TOPO_UI[TopologyView\nSVG + Packet Anim\nCell Inspector]
+        KPI_UI[KPIFeed\nReal-time Charts]
+        XAI_UI[XAIAttribution\nBar Chart + NL]
+        TWIN_UI[DTSimView\nBefore/After + Queue]
+        HEAL_UI[HealingLog\nTimeline + Rollback]
+        FORE_UI[ForecastPanel\nRisk Curve + Alert]
+    end
+    class TOPO_UI,KPI_UI,XAI_UI,TWIN_UI,HEAL_UI,FORE_UI ui
+
+    %% ==================== INFRASTRUCTURE ====================
+    subgraph INFRA [Kubernetes Deployment — Helm Chart]
+        direction TB
+        XAPP_POD[astra-xapp Deployment\nHPA: KPI Rate\nResources/Probes]
+        TWIN_POD[twin-service Deployment\ngRPC 50051]
+        REDIS_POD[Redis StatefulSet\nSentinel/Cluster]
+        PG_POD[PostgreSQL\nAlembic Migrations]
+        MONITOR[Prometheus Operator\nServiceMonitor\nGrafana Dashboards]
+        NETPOL[NetworkPolicies\nDeny-by-Default]
+        CERT[cert-manager\nmTLS Certificates]
+    end
+    class XAPP_POD,TWIN_POD,REDIS_POD,PG_POD,MONITOR,NETPOL,CERT infra
+
+    %% ==================== DATA FLOWS ====================
+    %% Ingestion
+    GNB -.->|E2 KPM| E2_KPM
+    OPEN5GS -->|JSONL| FILE
+    PROM -->|PromQL| PROM_AD
+    DEV -->|Synthetic| ADAPTER
+    FILE --> ADAPTER
+    PROM_AD --> ADAPTER
+    E2_KPM --> ADAPTER
+    ADAPTER --> BUFFER
+
+    %% Detection Pipeline
+    BUFFER --> SCALER --> DETECTOR
+    DETECTOR --> THRESH
+    THRESH -->|Anomaly| XAI
+    THRESH -->|Normal| BUFFER
+    XAI --> CLASSIFIER
+    DETECTOR -->|Latent Vector| FORECAST
+    BUFFER -->|Window| FORECAST
+    FORECAST -->|Risk Curve| PREEMPT
+    PREEMPT -->|Preemptive Alert| CLASSIFIER
+    CLASSIFIER -->|Anomaly Type| ENGINE
+    XAI -->|Attribution| LIVE
+    CLASSIFIER -->|Type| LIVE
+
+    %% Twin Validation
+    ENGINE -->|Candidate Action| ACTION_MAP
+    LIVE -->|Current KPIs| ACTION_MAP
+    ACTION_MAP --> LOCAL_TWIN
+    ACTION_MAP --> GRPC_TWIN
+    LOCAL_TWIN --> APPROVAL
+    GRPC_TWIN --> APPROVAL
+    APPROVAL -->|Approved| ENGINE
+    APPROVAL -->|Rejected| LIVE
+
+    %% Healing Execution
+    ENGINE -->|E2 Control| MOCK_E2
+    ENGINE -->|E2 Control| REAL_E2
+    REAL_E2 -.->|SCTP E2AP| GNB
+    ENGINE -->|Healing Event| LIVE
+    ENGINE -->|Rollback| ROLLBACK
+
+    %% Coordination
+    ENGINE -->|Heal Applied| COORDINATOR
+    COORDINATOR --> TOPO
+    COORDINATOR -->|HTTP Broadcast| NEIGHBOR
+
+    %% Persistence
+    LIVE -->|Async| REDIS
+    LIVE -->|Batch| PG
+    DETECTOR -.->|Model Load| MLFLOW
+    MLFLOW -.->|A1 Policy| A1
+
+    %% API & UI
+    REST --> LIVE
+    WS --> LIVE
+    A1 --> LIVE
+    AUTH --> REST
+    AUTH --> WS
+    WS --> TOPO_UI
+    WS --> KPI_UI
+    WS --> XAI_UI
+    WS --> TWIN_UI
+    WS --> HEAL_UI
+    WS --> FORE_UI
+
+    %% Infra
+    INFRA -.->|Deploys| XAPP_POD
+    INFRA -.->|Deploys| TWIN_POD
+    INFRA -.->|Deploys| REDIS_POD
+    INFRA -.->|Deploys| PG_POD
+    INFRA -.->|Deploys| MONITOR
+    INFRA -.->|Deploys| NETPOL
+    INFRA -.->|Deploys| CERT

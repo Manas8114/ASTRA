@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://json.schemastore.org/chart-lock
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ include "astra-xapp.fullname" . }}-config"
+  labels:
+    app.kubernetes.io/name: "{{ include "astra-xapp.name" . }}"
+data:
+  ASTRA_MODE: "{{ .Values.env.ASTRA_MODE }}"
+  LOG_LEVEL: "{{ .Values.env.LOG_LEVEL }}"
+  REDIS_HOST: "{{ printf "%s-redis" (include "astra-xapp.fullname" .) }}"
+  REDIS_PORT: "6379"
+  TWIN_SERVICE_URL: "{{ printf "%s-twin:50051" (include "astra-xapp.fullname" .) }}"
+  DT_APPROVAL_THRESHOLD: "{{ .Values.env.DT_APPROVAL_THRESHOLD | default "0.20" }}"
+  PREEMPTIVE_CONFIDENCE_GATE: "{{ .Values.env.PREEMPTIVE_CONFIDENCE_GATE | default "0.65" }}"
+  HEALING_COOLDOWN_SECONDS: "{{ .Values.env.HEALING_COOLDOWN_SECONDS | default "30" }}"
+  CONSECUTIVE_ANOMALY_TRIGGER: "{{ .Values.env.CONSECUTIVE_ANOMALY_TRIGGER | default "5" }}"

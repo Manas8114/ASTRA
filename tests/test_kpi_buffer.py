@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 from xapp.ingestion.kpi_schema import KPIVector
 from xapp.ingestion.kpi_buffer import KPIBuffer

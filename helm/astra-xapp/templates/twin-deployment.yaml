@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-twin" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ printf "%s-twin" (include "astra-xapp.name" .) | quote }}
+spec:
+  replicas: {{ .Values.twin.replicaCount | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ printf "%s-twin" (include "astra-xapp.name" .) | quote }}
+      app.kubernetes.io/component: twin
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ printf "%s-twin" (include "astra-xapp.name" .) | quote }}
+        app.kubernetes.io/component: twin
+      annotations:
+        {{- if .Values.prometheusRule.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "50051"
+        prometheus.io/path: "/metrics"
+        {{- end }}
+    spec:
+      containers:
+        - name: twin-service
+          image: "{{ .Values.twin.image.repository }}:{{ .Values.twin.image.tag }}"
+          imagePullPolicy: "{{ .Values.twin.image.pullPolicy }}"
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command: ["python", "-c", "import grpc; ch=grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(ch).result(timeout=2)"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["python", "-c", "import grpc; ch=grpc.insecure_channel('localhost:50051'); grpc.channel_ready_future(ch).result(timeout=2)"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          resources:
+            limits:
+              cpu: {{ .Values.twin.resources.limits.cpu | quote }}
+              memory: {{ .Values.twin.resources.limits.memory | quote }}
+            requests:
+              cpu: {{ .Values.twin.resources.requests.cpu | quote }}
+              memory: {{ .Values.twin.resources.requests.memory | quote }}

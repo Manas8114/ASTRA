@@ -17,7 +17,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from xapp.model.anomaly_detector import MinMaxScalerLite
 from xapp.model.lstm_autoencoder import LSTMAutoencoder
-from xapp.device import get_device, clear_gpu_cache
+from xapp.device import get_device
 
 
 def make_windows(data: np.ndarray, size: int = 30) -> np.ndarray:

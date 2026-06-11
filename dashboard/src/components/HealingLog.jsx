@@ -83,13 +83,16 @@ export function HealingLog({ healing = [] }) {
             <span>Showing {startIndex + 1} - {Math.min(startIndex + 5, safeHealing.length)} of {safeHealing.length}</span>
             <span>Older</span>
           </div>
+          <label className="sr-only" htmlFor="healing-slider">Healing Log Slider</label>
           <input
+            id="healing-slider"
             type="range"
             min="0"
             max={maxSliderValue}
             value={startIndex}
             onChange={(e) => setStartIndex(parseInt(e.target.value, 10))}
             className="timeline-slider"
+            aria-label="Healing History"
           />
         </div>
       )}

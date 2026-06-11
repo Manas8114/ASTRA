@@ -35,7 +35,7 @@ import logging
 from pathlib import Path
 from torch.utils.data import DataLoader, TensorDataset
 
-from xapp.device import get_device, clear_gpu_cache
+from xapp.device import get_device
 
 logging.basicConfig(
     level=logging.INFO,

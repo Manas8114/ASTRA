@@ -1,0 +1,199 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/manas8114/astra/xapp
+  pullPolicy: Always
+  tag: "stable"
+
+service:
+  type: ClusterIP
+  port: 8000
+
+twin:
+  image:
+    repository: ghcr.io/manas8114/astra/twin-service
+    tag: "stable"
+    pullPolicy: Always
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+redis:
+  image:
+    repository: redis
+    tag: "7.2-alpine"
+    pullPolicy: IfNotPresent
+  storageSize: 10Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+
+env:
+  ASTRA_MODE: "prod"
+  LOG_LEVEL: "INFO"
+  REDIS_HOST: "redis-master"
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+
+# ── Ingress ────────────────────────────────────────────────────────────────
+ingress:
+  className: nginx
+  enabled: true
+  hosts:
+    - astra.example.com
+  paths:
+    - path: /
+      pathType: Prefix
+      port: 8000
+  tls:
+    enabled: true
+    secretName: astra-xapp-tls
+    hosts:
+      - astra.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1s"
+  proxyBodySize: "10m"
+  proxyReadTimeout: "60"
+  proxySendTimeout: "60"
+
+# ── HPA (Horizontal Pod Autoscaler) ───────────────────────────────────────
+hpa:
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    cpu:
+      enabled: true
+      targetUtilization: 60
+    memory:
+      enabled: true
+      targetUtilization: 70
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 4
+          periodSeconds: 15
+
+# ── Twin HPA ───────────────────────────────────────────────────────────────
+twin:
+  hpa:
+    minReplicas: 1
+    maxReplicas: 3
+    metrics:
+      cpu:
+        enabled: true
+        targetUtilization: 60
+      memory:
+        enabled: true
+        targetUtilization: 70
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+      scaleUp:
+        stabilizationWindowSeconds: 0
+
+# ── Pod Disruption Budget ─────────────────────────────────────────────────
+pdb:
+  minAvailable: 2
+
+twin:
+  pdb:
+    minAvailable: 1
+
+# ── Network Policy ─────────────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  egress:
+    externalEnabled: true
+    allowedNamespaces:
+      - kube-system
+      - monitoring
+      - logging
+
+# ── Secrets ────────────────────────────────────────────────────────────────
+secrets:
+  astra-control-api-key: ""
+  astra-admin-token: ""
+  astra-viewer-token: ""
+  oidc-issuer: ""
+  a1-api-key: ""
+  database-url: ""
+  redis-password: ""
+  otel-endpoint: ""
+
+# ── Prometheus Rules ──────────────────────────────────────────────────────
+prometheusRule:
+  enabled: true
+  prometheusLabel: "prometheus"
+  alerts:
+    anomalyRateHigh:
+      enabled: true
+      threshold: 0.1
+      for: "2m"
+    healingFailure:
+      enabled: true
+      threshold: 0
+      for: "1m"
+    forecastDrift:
+      enabled: true
+      threshold: 0.5
+      for: "5m"
+    mseRegression:
+      enabled: true
+      multiplier: 1.5
+      for: "5m"
+    e2ConnectionDown:
+      enabled: true
+      for: "1m"
+    redisDown:
+      enabled: true
+      for: "1m"
+    forecastErrorHigh:
+      enabled: true
+      threshold: 0.5
+      for: "5m"
+    circuitBreakerOpen:
+      enabled: true
+      for: "1m"
+    websocketQueueHigh:
+      enabled: true
+      threshold: 0.8
+      for: "5m"
+    driftDetected:
+      enabled: true
+      for: "1m"
+
+# ── Observability ──────────────────────────────────────────────────────────
+observability:
+  enableTracing: true
+  otelEndpoint: "http://tempo:4317"
+  logLevel: INFO
+  logFormat: json

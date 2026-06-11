@@ -31,7 +31,7 @@ function App() {
         <XAIAttribution event={live.attribution} />
         <DTSimView simulation={live.simulation} />
         <HealingLog healing={live.healing} />
-        <TopologyView events={live.events} />
+        <TopologyView events={live.events} kpis={live.kpis} simulation={live.simulation} />
       </div>
     </main>
   );

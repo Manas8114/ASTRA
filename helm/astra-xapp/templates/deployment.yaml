@@ -9,10 +9,18 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+      app.kubernetes.io/component: xapp
   template:
     metadata:
       labels:
         app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+        app.kubernetes.io/component: xapp
+      annotations:
+        {{- if .Values.prometheusRule.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+        {{- end }}
     spec:
       containers:
         - name: {{ .Chart.Name }}
@@ -22,10 +30,29 @@ spec:
             - name: http
               containerPort: {{ .Values.service.port }}
               protocol: TCP
-          env:
-            - name: ASTRA_MODE
-              value: {{ .Values.env.ASTRA_MODE | quote }}
-            - name: LOG_LEVEL
-              value: {{ .Values.env.LOG_LEVEL | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ printf "%s-config" (include "astra-xapp.fullname" .) }}
+            {{- if .Values.secrets }}
+            - secretRef:
+                name: {{ printf "%s-secrets" (include "astra-xapp.fullname" .) }}
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}

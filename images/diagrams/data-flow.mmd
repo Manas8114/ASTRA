@@ -1,0 +1,62 @@
+%% ASTRA — Data Flow: Detection → Healing Loop
+%% Render at: https://mermaid.live
+%% Embed in docs/ARCHITECTURE.md
+
+flowchart LR
+    subgraph INGEST [Ingestion]
+        direction TB
+        KPI[KPI Stream\n1Hz per cell]
+        BUF[KPI Buffer\n30-sample window]
+    end
+
+    subgraph ML [ML Pipeline]
+        direction TB
+        AE[LSTM Autoencoder\nPyTorch/ONNX INT8]
+        XAI[AttentionExtractor\nPer-Feature MSE %]
+        CLF[AnomalyClassifier\n5 Types]
+        FC[ForecastHead\nSeq2Seq on Latent]
+        PH[PreemptiveHealer\n60s Risk Curve]
+    end
+
+    subgraph TWIN [Digital Twin Gatekeeper]
+        direction TB
+        TM[M/M/1 Simulator\nρ=λ/μ, Lq, W, BLER]
+        AG[Approval Gate\nImprovement ≥ 20%]
+    end
+
+    subgraph ACT [Action Execution]
+        direction TB
+        ENG[HealingActionEngine\nCandidate + Cooldown]
+        E2C[E2 RC Client\nDemo / Real]
+        GH[gNB / E2 Node]
+    end
+
+    %% Flow
+    KPI --> BUF
+    BUF --> AE
+    AE --> XAI
+    XAI --> CLF
+    CLF --> TM
+    BUF -.-> FC
+    AE -.->|Latent Vector| FC
+    FC --> PH
+    PH -.->|Preemptive Alert| CLF
+    TM --> AG
+    AG -->|Approved| ENG
+    AG -.->|Rejected| ESC[Escalation to Operator]
+    ENG --> E2C
+    E2C --> GH
+    ENG -.->|Rollback Metadata| RB[Rollback Action]
+
+    %% Styling
+    classDef kpi fill:#0d1b2a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    classDef ml fill:#1e1b4b,stroke:#a78bfa,stroke-width:2px,color:#fff
+    classDef twin fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#fff
+    classDef heal fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff
+    classDef esc fill:#450a0a,stroke:#ef4444,stroke-width:2px,stroke-dasharray: 5 5,color:#fff
+
+    class KPI,BUF kpi
+    class AE,XAI,CLF,FC,PH ml
+    class TM,AG twin
+    class ENG,E2C,GH,RB heal
+    class ESC esc

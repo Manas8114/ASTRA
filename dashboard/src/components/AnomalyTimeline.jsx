@@ -33,13 +33,16 @@ export function AnomalyTimeline({ anomalies }) {
             <span>Showing {startIndex + 1} - {Math.min(startIndex + 5, anomalies.length)} of {anomalies.length}</span>
             <span>Older</span>
           </div>
+          <label className="sr-only" htmlFor="timeline-slider">Anomaly Timeline Slider</label>
           <input
+            id="timeline-slider"
             type="range"
             min="0"
             max={maxSliderValue}
             value={startIndex}
             onChange={(e) => setStartIndex(parseInt(e.target.value, 10))}
             className="timeline-slider"
+            aria-label="Timeline History"
           />
         </div>
       )}

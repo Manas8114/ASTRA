@@ -1,0 +1,82 @@
+%% ASTRA — ML Pipeline Detail: Training → Inference → Continual Learning
+%% Render at: https://mermaid.live
+
+flowchart TB
+    subgraph TRAIN [Offline Training Pipeline]
+        direction TB
+        GEN[generate_normal_data.py\nSynthetic KPIs\nNormal traffic only]
+        TRAIN[train_lstm.py\nLSTM Autoencoder\nEncoder: 6→32→16→8\nDecoder: 8→16→32→6\nMSE Loss + Early Stopping]
+        THRESH_CALC[Threshold Calculation\n3-sigma on train MSE\nSave: threshold.json]
+        SCALER_FIT[Scaler Fitting\nMinMax on normal ranges\nSave: scaler.pkl]
+        EXPORT[export_onnx.py\nPyTorch → ONNX\nDynamic INT8 Quantization\nlstm_ae_best_quantized.onnx]
+        FORECAST_TRAIN[train_forecast.py\nForecastHead\nFrozen encoder + Seq2Seq decoder\nTeacher forcing on normal seqs\nSave: forecast_head.pt]
+    end
+    
+    subgraph INFERENCE [Online Inference (prod mode)]
+        direction TB
+        LOAD[Load quantized ONNX\nCUDA/CPU ExecutionProvider]
+        SCALE[MinMaxScaler.transform\nwindow[30,6] → scaled[30,6]]
+        ENCODE[ONNX Inference\nEncoder → latent[8] + Reconstruction]
+        SCORE[MSE Scoring\nper_feature_mse[6]\ntotal_mse = mean]
+        THRESH_CHK[Dynamic Threshold\n3-sigma rolling\nconsecutive_trigger=5]
+        ATTENTION[AttentionExtractor\nper_feature / sum → %\nNatural language template]
+        CLASSIFY[AnomalyClassifier\nRule-based on attribution\n5 types + NOVEL]
+    end
+    
+    subgraph FORECAST [Forecasting Pipeline]
+        direction TB
+        FC_LOAD[Load ForecastHead\nForecastHeadNet + frozen encoder]
+        FC_INFER[Autoregressive Decode\nlatent[8] + last_kpi[6]\n→ trajectory[300,6]]
+        RISK[Risk Curve\nMSE vs normal_center[0.5]\nper timestep]
+        ALERT[Preemptive Alert\nrisk_curve[0:60] > 2σ\nseconds_to_anomaly]
+        CONF[Confidence\n1 - variance(trajectory) × 4]
+    end
+    
+    subgraph CONTINUAL [Continual Learning (EWC)]
+        direction TB
+        MEM[AnomalyMemoryBuffer\ncapacity=500\nStores per_feature_mse of novel anomalies]
+        CONSOLIDATE[EWC Consolidate\nFisher Diagonal F_ii\n= E[(∂L/∂θ_i)²] on buffer]
+        FINE_TUNE[Online Fine-Tune\nLoss = L_recon + (λ/2)ΣF_ii(θ_i-θ*_i)²\nλ=1000 (EWC_LAMBDA)]
+        UPDATE[Update Fisher + θ*\nBuffer drains after consolidate]
+    end
+    
+    %% Connections
+    GEN --> TRAIN
+    TRAIN --> THRESH_CALC
+    TRAIN --> SCALER_FIT
+    TRAIN --> EXPORT
+    TRAIN --> FORECAST_TRAIN
+    
+    TRAIN -.->|Artifacts| LOAD
+    SCALER_FIT -.->|scaler.pkl| SCALE
+    THRESH_CALC -.->|threshold.json| THRESH_CHK
+    FORECAST_TRAIN -.->|forecast_head.pt| FC_LOAD
+    
+    SCALE --> ENCODE
+    ENCODE --> SCORE
+    SCORE --> THRESH_CHK
+    THRESH_CHK --> ATTENTION
+    ATTENTION --> CLASSIFY
+    
+    ENCODE -.->|latent| FC_INFER
+    SCORE -.->|window| FC_INFER
+    FC_INFER --> RISK
+    RISK --> ALERT
+    RISK --> CONF
+    
+    CLASSIFY -.->|Novel anomaly| MEM
+    MEM -->|Buffer full| CONSOLIDATE
+    CONSOLIDATE --> FINE_TUNE
+    FINE_TUNE --> UPDATE
+    UPDATE -.->|Updated model/weights| LOAD
+    
+    %% Styling
+    classDef train fill:#1e1b4b,stroke:#a78bfa,stroke-width:2px,color:#fff
+    classDef infer fill:#0d1b2a,stroke:#38bdf8,stroke-width:2px,color:#fff
+    classDef forecast fill:#14532d,stroke:#4ade80,stroke-width:2px,color:#fff
+    classDef continual fill:#7c2d12,stroke:#fb923c,stroke-width:2px,color:#fff
+    
+    class GEN,TRAIN,THRESH_CALC,SCALER_FIT,EXPORT,FORECAST_TRAIN train
+    class LOAD,SCALE,ENCODE,SCORE,THRESH_CHK,ATTENTION,CLASSIFY infer
+    class FC_LOAD,FC_INFER,RISK,ALERT,CONF forecast
+    class MEM,CONSOLIDATE,FINE_TUNE,UPDATE continual

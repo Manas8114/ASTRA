@@ -1,0 +1,124 @@
+%% ASTRA — Sequence: Reactive Healing Loop
+%% Render at: https://mermaid.live
+%% Embed in docs/ARCHITECTURE.md
+
+sequenceDiagram
+    autonumber
+    actor Operator
+    participant KPI as KPI Stream\n(Prometheus/Open5GS/E2)
+    participant BUF as KPI Buffer\n(30-sample window)
+    participant AE as LSTM Autoencoder\nAnomalyDetector
+    participant XAI as AttentionExtractor\nXAI Attribution
+    participant CLF as AnomalyClassifier\n5 Types
+    participant TW as Digital Twin\nM/M/1 Simulator
+    participant ENG as HealingActionEngine
+    participant E2C as E2 RC Client\nDemo / Real
+    participant GH as gNB / E2 Node
+    participant WS as WebSocket Hub
+    participant UI as React NOC Dashboard
+    participant REDIS as Redis Streams
+    participant PG as PostgreSQL Audit
+    
+    Note over KPI,UI: === REACTIVE HEALING LOOP (11.4s end-to-end) ===
+    
+    loop Every 1 second
+        KPI->>BUF: Push KPI sample\n{dl_throughput, latency, bler, rsrp, ho, slice_util}
+        BUF->>BUF: Maintain sliding window\n(30 samples × 6 KPIs)
+        
+        alt Window Ready (30 samples)
+            BUF->>AE: window: np.ndarray[30, 6]
+            AE->>AE: Scale via MinMaxScaler
+            AE->>AE: Forward pass (PyTorch/ONNX)
+            AE-->>BUF: total_mse, per_feature_mse, attention_weights
+            
+            AE->>AE: Update dynamic threshold\n3-sigma + consecutive counter
+            
+            alt Anomaly Detected (mse > threshold × 5 consecutive)
+                AE->>XAI: per_feature_mse + attention_weights
+                XAI->>XAI: Normalize to % contribution
+                XAI->>XAI: Generate natural language explanation
+                XAI-->>CLF: attribution_weights, top_cause, explanation
+                
+                CLF->>CLF: Map attribution → anomaly_type\n{CONGESTION, HIGH_LATENCY, PACKET_LOSS, SLICE_OVERFLOW, NOVEL}
+                CLF-->>ENG: anomaly_type, confidence, top_kpis, reasoning
+                
+                par XAI Event to Dashboard
+                    WS->>UI: ANOMALY_DETECTED event\n{type, attribution, explanation, anomaly_type}
+                    UI->>UI: Update XAIAttribution bar chart
+                and Twin Validation
+                    ENG->>ENG: candidate_for(anomaly_type)\n→ HealingAction{action_type, params, rationale}
+                    ENG->>TW: simulate_action(candidate, current_kpis, current_mse)
+                    
+                    TW->>TW: Derive λ, μ, ρ from KPIs\nρ = slice_util/100
+                    TW->>TW: Apply action → new λ', μ'
+                    TW->>TW: Compute new ρ', Lq, latency, throughput, BLER
+                    TW->>TW: Project MSE via detector scoring
+                    TW->>TW: improvement = (mse - projected_mse) / mse
+                    TW-->>ENG: SimResult{projected_state, improvement, approved, queue_metrics, recommendation}
+                    
+                    alt Approved (improvement ≥ 20%)
+                        ENG->>ENG: Enforce blast radius limits (prod mode)
+                        ENG->>E2C: send_control(action_type, params)
+                        
+                        alt Real E2 Client
+                            E2C->>E2C: Encode E2SM-RC Control Header (ASN.1 PER)
+                            E2C->>E2C: Encode E2SM-RC Control Message (ASN.1 PER)
+                            E2C->>GH: SCTP E2AP Control Request
+                            GH-->>E2C: E2AP Control Acknowledge
+                        else Demo E2 Client
+                            E2C->>E2C: Mock success (1ms latency)
+                        end
+                        
+                        E2C-->>ENG: {sent: true, sctp_transmitted, ric_request_id}
+                        ENG->>ENG: Record healing_applied, update cooldown
+                        
+                        par Healing Event to Dashboard
+                            WS->>UI: HEALING_APPLIED event\n{action_type, params, mttr, dt_approval, rollback}
+                            UI->>UI: Update HealingLog + TopologyView
+                        and Multi-Cell Coordination
+                            ENG->>ENG: multicell.broadcast(source, action, params)
+                            ENG->>WS: MULTICELL_BROADCAST event
+                            WS->>UI: Neighbor notification animation
+                        and Persistence
+                            ENG->>REDIS: Async append to streams/hashes
+                            ENG->>PG: Batch insert audit trail
+                        end
+                        
+                    else Rejected (improvement < 20%)
+                        ENG->>WS: ESCALATION event\n{reason: twin.recommendation}
+                        WS->>UI: Show escalation alert
+                    end
+                    
+                end
+            else Normal
+                AE->>AE: Append MSE to normal history
+            end
+        end
+    end
+    
+    Note over Operator,UI: Operator can inject anomalies via NocControls\nGET /inject/anomaly?type=CONGESTION&cell=cell_001
+    
+    %% Styling
+    box "Ingestion" #0d1b2a
+        participant KPI
+        participant BUF
+    end
+    box "ML Pipeline" #1e1b4b
+        participant AE
+        participant XAI
+        participant CLF
+    end
+    box "Digital Twin" #14532d
+        participant TW
+    end
+    box "Healing & Control" #7c2d12
+        participant ENG
+        participant E2C
+        participant GH
+    end
+    box "Observability" #0c4a6e
+        participant WS
+        participant UI
+        participant REDIS
+        participant PG
+    end

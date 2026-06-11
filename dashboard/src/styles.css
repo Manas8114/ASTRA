@@ -108,3 +108,134 @@ th, td { text-align: left; border-bottom: 1px solid #263244; padding: 7px 5px; }
   transform: scale(1.2);
 }
 
+/* Topology Map Styles */
+.topology-panel {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.topology-panel .panel-title {
+  padding: 14px 14px 0;
+}
+.topology-container {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+}
+.topology-svg {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+}
+.topology-link {
+  stroke: #202b3a;
+  stroke-width: 2;
+  stroke-dasharray: 4;
+}
+.topology-node {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+.topology-node:hover {
+  transform: scale(1.05);
+}
+.topology-node.selected .node-circle {
+  stroke: #fff;
+  stroke-width: 4;
+}
+.node-label {
+  fill: #9aa8ba;
+  font-size: 11px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.node-pulse {
+  transform-origin: center;
+  animation: pulse 2s infinite ease-in-out;
+}
+@keyframes pulse {
+  0% { transform: scale(0.8); opacity: 0.5; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+/* Cell Inspector Sidebar */
+.cell-inspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 200px;
+  height: 100%;
+  background: rgba(13, 19, 29, 0.95);
+  border-left: 1px solid #202b3a;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: slide-in 0.2s ease-out;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+@keyframes slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.inspector-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  border-bottom: 1px solid #202b3a;
+  padding-bottom: 10px;
+}
+.close-btn {
+  background: none;
+  border: none;
+  color: #9aa8ba;
+  cursor: pointer;
+  padding: 4px;
+  display: grid;
+  place-items: center;
+}
+.close-btn:hover {
+  color: #fff;
+}
+.inspector-status {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.status-badge {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+  width: fit-content;
+}
+.status-badge.normal { background: rgba(69, 179, 107, 0.15); color: #45b36b; }
+.status-badge.anomalous { background: rgba(227, 93, 93, 0.15); color: #e35d5d; }
+.status-badge.healing { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
+.e2-badge {
+  font-size: 10px;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(155, 140, 255, 0.15);
+  color: #9b8cff;
+  width: fit-content;
+}
+.inspector-kpis {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 11px;
+}
+.kpi-row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(32, 43, 58, 0.5);
+  padding-bottom: 4px;
+}
+.kpi-row span { color: #9aa8ba; }
+.kpi-row strong { color: #edf2f7; }

@@ -1,0 +1,121 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ printf "%s-prometheus-rules" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+    prometheus: {{ .Values.prometheusRule.prometheusLabel }}
+spec:
+  groups:
+  - name: astra-xapp.alerts
+    interval: 30s
+    rules:
+    # Alert: Anomaly rate too high
+    - alert: AstraAnomalyRateHigh
+      expr: |
+        rate(astra_anomalies_total[5m]) > {{ .Values.prometheusRule.alerts.anomalyRateHigh.threshold }}
+      for: {{ .Values.prometheusRule.alerts.anomalyRateHigh.for }}
+      labels:
+        severity: warning
+      annotations:
+        summary: "High anomaly detection rate on {{ `$labels.cell_id` }}"
+        description: "Anomaly rate is {{ `$value` | humanizeDuration }} per second, exceeding threshold"
+
+    # Alert: Healing action failures
+    - alert: AstraHealingFailure
+      expr: |
+        rate(astra_healing_failed_total[5m]) > {{ .Values.prometheusRule.alerts.healingFailure.threshold }}
+      for: {{ .Values.prometheusRule.alerts.healingFailure.for }}
+      labels:
+        severity: critical
+      annotations:
+        summary: "Healing action failure on {{ `$labels.cell_id` }}"
+        description: "Healing action failed, immediate operator attention required"
+
+    # Alert: Forecast confidence low
+    - alert: AstraForecastDrift
+      expr: |
+        astra_forecast_confidence < {{ .Values.prometheusRule.alerts.forecastDrift.threshold }}
+      for: {{ .Values.prometheusRule.alerts.forecastDrift.for }}
+      labels:
+        severity: warning
+      annotations:
+        summary: "Forecast confidence dropped on {{ `$labels.cell_id` }}"
+        description: "Forecast confidence is {{ `$value` | humanizePercentage }}"
+
+    # Alert: Model MSE regression
+    - alert: AstraModelMSERegression
+      expr: |
+        astra_model_mse > (astra_model_mse_baseline * {{ .Values.prometheusRule.alerts.mseRegression.multiplier }})
+      for: {{ .Values.prometheusRule.alerts.mseRegression.for }}
+      labels:
+        severity: critical
+      annotations:
+        summary: "Model MSE regression on {{ `$labels.cell_id` }}"
+        description: "Model MSE has increased by {{ `$value | humanizePercentage }}` relative to baseline"
+
+    # Alert: E2 connection down
+    - alert: AstraE2ConnectionDown
+      expr: |
+        up{job="{{ include \"astra-xapp.fullname\" . }}",component="e2"} == 0
+      for: {{ .Values.prometheusRule.alerts.e2ConnectionDown.for }}
+      labels:
+        severity: critical
+      annotations:
+        summary: "E2 connection down for {{ `$labels.cell_id` }}"
+        description: "E2 control plane connection has been down for {{ `$value` | humanizeDuration }}"
+
+    # Alert: Redis down
+    - alert: AstraRedisDown
+      expr: |
+        redis_up{pod=~"{{ include \"astra-xapp.fullname\" . }}-redis.*"} == 0
+      for: {{ .Values.prometheusRule.alerts.redisDown.for }}
+      labels:
+        severity: critical
+      annotations:
+        summary: "Redis instance down for {{ `$labels.pod` }}"
+        description: "Redis is unavailable, affecting state persistence"
+
+    # Alert: High forecast error
+    - alert: AstraForecastErrorHigh
+      expr: |
+        astra_forecast_error > {{ .Values.prometheusRule.alerts.forecastErrorHigh.threshold }}
+      for: {{ .Values.prometheusRule.alerts.forecastErrorHigh.for }}
+      labels:
+        severity: warning
+      annotations:
+        summary: "Forecast error high on {{ `$labels.cell_id` }}"
+        description: "Forecast error (MSE) is {{ `$value` }}"
+
+    # Alert: Circuit breaker open
+    - alert: AstraCircuitBreakerOpen
+      expr: |
+        astra_circuit_breaker_state{state="open"} == 1
+      for: {{ .Values.prometheusRule.alerts.circuitBreakerOpen.for }}
+      labels:
+        severity: warning
+      annotations:
+        summary: "Circuit breaker open for {{ `$labels.name` }}"
+        description: "Circuit breaker {{ `$labels.name` }} is open, fallback mode active"
+
+    # Alert: High WebSocket queue depth
+    - alert: AstraWebsocketQueueHigh
+      expr: |
+        (astra_websocket_client_queue_size / astra_websocket_client_queue_capacity) > {{ .Values.prometheusRule.alerts.websocketQueueHigh.threshold }}
+      for: {{ .Values.prometheusRule.alerts.websocketQueueHigh.for }}
+      labels:
+        severity: warning
+      annotations:
+        summary: "WebSocket client queue near capacity for {{ `$labels.client_id` }}"
+        description: "Queue utilization is {{ `$value | humanizePercentage }}`"
+
+    # Alert: Drift detection triggered
+    - alert: AstraDriftDetected
+      expr: |
+        astra_drift_alert{severity="critical"} == 1
+      for: {{ .Values.prometheusRule.alerts.driftDetected.for }}
+      labels:
+        severity: critical
+      annotations:
+        summary: "Data drift detected on {{ `$labels.cell_id` }}"
+        description: "Drift type: {{ `$labels.type` }}, immediate retraining may be required"

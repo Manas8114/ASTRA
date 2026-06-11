@@ -1,4 +1,3 @@
-import pytest
 from xapp.ingestion.kpi_schema import AnomalyType
 from xapp.classifier.anomaly_classifier import AnomalyClassifier
 

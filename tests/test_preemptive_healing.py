@@ -7,9 +7,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from xapp.prediction.forecast_head import ForecastHead, ForecastHeadNet, ForecastResult
 from xapp.prediction.preemptive_healer import PreemptiveHealer, PreemptiveStatus
-from xapp.ingestion.kpi_schema import AnomalyType
-from xapp.model.anomaly_detector import AnomalyDetector
-from xapp.healing.action_engine import HealingActionEngine, HealingAction
 from xapp.state import LiveState
 from fastapi.testclient import TestClient
 from fastapi import FastAPI
@@ -47,7 +44,11 @@ def test_forecast_head():
     assert res.trajectory.shape == (300, 6)
     assert res.preemptive_alert is False
     assert res.seconds_to_anomaly is None
-    assert forecaster._last_result == res
+    assert forecaster._last_result is not None
+    assert forecaster._last_result["preemptive_alert"] == res.preemptive_alert
+    assert forecaster._last_result["seconds_to_anomaly"] == res.seconds_to_anomaly
+    assert forecaster._last_result["confidence"] == res.confidence
+    assert forecaster._last_result["timestamp"] == res.timestamp
 
 
 @pytest.mark.asyncio
@@ -135,17 +136,14 @@ def test_rest_api_forecast_routes():
     
     # Mock forecaster and preemptive
     forecaster = MagicMock()
-    forecaster._last_result = ForecastResult(
-        trajectory=np.zeros((300, 6)),
-        risk_curve=np.zeros(300),
-        preemptive_alert=True,
-        seconds_to_anomaly=12,
-        confidence=0.9,
-        at_risk_kpis=["bler_pct"],
-        summary="mock forecast",
-        timestamp="2026-06-01T00:00:00Z"
-    )
-    
+    forecaster._last_result = {
+        "preemptive_alert": True,
+        "seconds_to_anomaly": 12,
+        "confidence": 0.9,
+        "at_risk_kpis": ["bler_pct"],
+        "summary": "mock forecast",
+        "timestamp": "2026-06-01T00:00:00Z"
+    }  
     preemptive = MagicMock()
     preemptive.stats = {
         "prevented": 3,
@@ -160,8 +158,11 @@ def test_rest_api_forecast_routes():
     state.forecaster = forecaster
     state.preemptive = preemptive
     
+    state_manager = MagicMock()
+    state_manager.get_state.return_value = state
+
     app = FastAPI()
-    app.include_router(rest_router(state))
+    app.include_router(rest_router(state_manager))
     client = TestClient(app)
     
     # Test forecast latest

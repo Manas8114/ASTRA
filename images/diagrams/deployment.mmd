@@ -1,0 +1,106 @@
+%% ASTRA — Deployment Topology (Kubernetes + Helm)
+%% Render at: https://mermaid.live
+
+flowchart TB
+    subgraph CLUSTER [Kubernetes Cluster — astra-net namespace]
+        direction TB
+        
+        subgraph INGRESS [Ingress Layer]
+            ING[NGINX Ingress\nTLS Termination\nastra.example.com]
+        end
+        
+        subgraph XAPP [ASTRA xApp Deployment]
+            direction TB
+            XAPP_POD[astra-xapp Pod\nFastAPI + WebSocket\nHPA: KPI Rate]
+            XAPP_SVC[ClusterIP Service\nPort 8000]
+        end
+        
+        subgraph TWIN_SVC [Digital Twin Service]
+            direction TB
+            TWIN_POD[twin-service Pod\ngRPC :50051\nM/M/1 Engine]
+            TWIN_SVC[ClusterIP Service\nPort 50051]
+        end
+        
+        subgraph DATA [Data Layer]
+            direction TB
+            REDIS_STS[Redis StatefulSet\n3 replicas\nSentinel HA]
+            REDIS_SVC[Headless Service\nPort 6379]
+            PG_STS[PostgreSQL StatefulSet\n1 primary + 1 replica]
+            PG_SVC[ClusterIP Service\nPort 5432]
+        end
+        
+        subgraph MONITORING [Observability Stack]
+            direction TB
+            PROM_OP[Prometheus Operator\nServiceMonitors]
+            GRAFANA[Grafana\nDashboards]
+            LOKI[Loki\nLog Aggregation]
+            TEMPO[Tempo\nDistributed Traces]
+        end
+        
+        subgraph SECURITY [Security]
+            direction TB
+            NETPOL[NetworkPolicies\nDeny-by-Default\nEgress/Ingress Rules]
+            CERT_MGR[cert-manager\nLet's Encrypt / CA\nmTLS Certificates]
+            EXT_SEC[External Secrets\nOperator → Vault]
+        end
+    end
+    
+    subgraph EXTERNAL [External Systems]
+        direction TB
+        GNB[gNB / E2 Node\nSCTP :36421]
+        RIC[Near-RT RIC\nFlexRIC / O-RAN SC]
+        SMO[Non-RT RIC / SMO\nA1 Policy]
+        PROM_EXT[Prometheus\nKPI Source]
+        OPEN5GS[Open5GS Core]
+    end
+    
+    %% Connections
+    ING --> XAPP_SVC
+    XAPP_SVC --> XAPP_POD
+    XAPP_POD --> TWIN_SVC
+    XAPP_POD --> REDIS_SVC
+    XAPP_POD --> PG_SVC
+    TWIN_SVC --> TWIN_POD
+    
+    XAPP_POD -.->|E2 Control\nSCTP| GNB
+    XAPP_POD -.->|E2 KPM\nSubscription| RIC
+    XAPP_POD -.->|A1 Policy| SMO
+    XAPP_POD -->|PromQL| PROM_EXT
+    XAPP_POD -->|KPI JSONL| OPEN5GS
+    
+    XAPP_POD --> PROM_OP
+    TWIN_POD --> PROM_OP
+    REDIS_STS --> PROM_OP
+    PG_STS --> PROM_OP
+    
+    PROM_OP --> GRAFANA
+    XAPP_POD --> LOKI
+    XAPP_POD --> TEMPO
+    
+    NETPOL --> XAPP_POD
+    NETPOL --> TWIN_POD
+    NETPOL --> REDIS_STS
+    NETPOL --> PG_STS
+    CERT_MGR --> ING
+    CERT_MGR --> XAPP_POD
+    CERT_MGR --> TWIN_POD
+    EXT_SEC --> XAPP_POD
+    
+    %% Helm
+    HELM[Helm Chart\nastra-xapp\nvalues-dev/staging/prod.yaml] -.->|Deploys| CLUSTER
+    
+    %% Styling
+    classDef k8s fill:#374151,stroke:#9ca3af,stroke-width:1px,stroke-dasharray: 5 5,color:#fff
+    classDef svc fill:#0c4a6e,stroke:#06b6d4,stroke-width:2px,color:#fff
+    classDef data fill:#1f2937,stroke:#6b7280,stroke-width:2px,color:#fff
+    classDef mon fill:#1e1b4b,stroke:#a78bfa,stroke-width:2px,color:#fff
+    classDef sec fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff
+    classDef ext fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff
+    classDef helm fill:#422006,stroke:#fbbf24,stroke-width:2px,color:#fff
+    
+    class ING,XAPP_POD,XAPP_SVC,TWIN_POD,TWIN_SVC k8s
+    class REDIS_STS,REDIS_SVC,PG_STS,PG_SVC data
+    class PROM_OP,GRAFANA,LOKI,TEMPO mon
+    class NETPOL,CERT_MGR,EXT_SEC sec
+    class GNB,RIC,SMO,PROM_EXT,OPEN5GS ext
+    class HELM helm

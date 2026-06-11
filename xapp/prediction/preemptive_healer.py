@@ -28,6 +28,7 @@ Event Types emitted to WebSocket:
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -88,7 +89,7 @@ PREEMPTIVE_ACTION_MAP = {
 }
 
 # Confidence threshold below which we skip pre-emptive action
-MIN_CONFIDENCE = 0.65
+MIN_CONFIDENCE = float(os.getenv("PREEMPTIVE_CONFIDENCE_GATE", "0.65"))
 
 # Track prevention outcomes for calibration
 _prevention_history: list[PreemptiveEvent] = []
@@ -123,7 +124,6 @@ class PreemptiveHealer:
 
         Emits WebSocket events throughout.
         """
-        from datetime import datetime, timezone
 
         ts = datetime.now(timezone.utc).isoformat()
 

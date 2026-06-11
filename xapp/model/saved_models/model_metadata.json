@@ -1,8 +1,9 @@
 {
   "version": "statistical-baseline-v1",
-  "trained_at": "2026-05-31T14:07:23.187900+00:00",
+  "trained_at": "2026-06-07T15:47:53.515196+00:00",
   "n_samples": 21600,
-  "val_loss": 0.01652206853032112,
-  "threshold": 0.021596708451397717,
-  "fpr": 0.0050984936268829665
+  "val_loss": 0.015869038179516792,
+  "threshold": 0.021030902513302863,
+  "fpr": 0.004171494785631518,
+  "model_path": "xapp\\model\\saved_models\\lstm_ae_best.pt"
 }

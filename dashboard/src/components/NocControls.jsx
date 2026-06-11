@@ -81,13 +81,16 @@ export function NocControls() {
       <div style={{ marginBottom: "16px" }}>
         <h4 style={{ margin: "0 0 8px 0", fontSize: "13px", color: "#c7d2df" }}>Adjust Detection Threshold</h4>
         <form onSubmit={handleUpdatePolicy} style={{ display: "flex", gap: "8px" }}>
+          <label className="sr-only" htmlFor="threshold-input">Threshold Value</label>
           <input
+            id="threshold-input"
             type="number"
             step="0.0001"
             min="0.0001"
             max="1.0"
             value={threshold}
             onChange={(e) => setThreshold(e.target.value)}
+            aria-label="Threshold Value"
             style={{
               flex: 1,
               background: "#0d131d",

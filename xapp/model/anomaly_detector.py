@@ -1,4 +1,5 @@
 from __future__ import annotations
+from collections import deque
 
 import json
 import logging
@@ -40,8 +41,6 @@ class MinMaxScalerLite:
         return data * self.span + self.mins
 
 
-from collections import deque
-
 class AnomalyDetector:
     def __init__(
         self,
@@ -65,16 +64,21 @@ class AnomalyDetector:
         if self.mode == "prod":
             import onnxruntime as ort
             onnx_path = Path("xapp/model/saved_models/lstm_ae_best.onnx")
-            if onnx_path.exists():
-                # Use GPU for ONNX if available
+            quantized_path = Path("xapp/model/saved_models/lstm_ae_best_quantized.onnx")
+            
+            # Prefer INT8 quantized model for edge inference optimization
+            target_onnx = quantized_path if quantized_path.exists() else onnx_path
+            
+            if target_onnx.exists():
+                # Use GPU for ONNX if available, though quantized models usually run fast on CPU too
                 providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
                 try:
-                    self.onnx_session = ort.InferenceSession(str(onnx_path), providers=providers)
+                    self.onnx_session = ort.InferenceSession(str(target_onnx), providers=providers)
                 except Exception:
-                    self.onnx_session = ort.InferenceSession(str(onnx_path))
-                log.info("ONNX session providers: %s", self.onnx_session.get_providers())
+                    self.onnx_session = ort.InferenceSession(str(target_onnx))
+                log.info("ONNX session loaded from %s with providers: %s", target_onnx.name, self.onnx_session.get_providers())
             else:
-                log.warning("ONNX model not found at %s", onnx_path)
+                log.warning("ONNX model not found at %s or %s", onnx_path, quantized_path)
                 self.onnx_session = None
         else:
             import torch
@@ -93,7 +97,7 @@ class AnomalyDetector:
                     log.warning("Failed to load model weights: %s", e)
             self.model.eval()
 
-        self._declared_anomalies_history: list[datetime] = []
+        self._declared_anomalies_history: deque[datetime] = deque(maxlen=1000)
 
     def _load_threshold(self, path: str) -> float:
         file_path = Path(path)
@@ -145,10 +149,9 @@ class AnomalyDetector:
     def recent_declared_anomalies(self, window_seconds: int) -> list[datetime]:
         now = datetime.now(timezone.utc)
         cutoff = now - timedelta(seconds=window_seconds)
-        self._declared_anomalies_history = [
-            t for t in self._declared_anomalies_history
-            if t > cutoff - timedelta(minutes=10)
-        ]
+        # Prune entries older than 10 minutes from the bounded deque
+        while self._declared_anomalies_history and self._declared_anomalies_history[0] < now - timedelta(minutes=10):
+            self._declared_anomalies_history.popleft()
         return [t for t in self._declared_anomalies_history if t > cutoff]
 
 

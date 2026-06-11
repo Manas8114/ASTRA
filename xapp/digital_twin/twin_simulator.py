@@ -16,16 +16,24 @@ Healing actions modify λ (arrival rate) and μ (service rate):
 
 BLER modelled as load-dependent: bler ∝ ρ^1.5
 Throughput = μ × (1 - ρ)
+
+Circuit Breaker (shared from xapp.resilience):
+  Protects gRPC twin-service calls with automatic fallback to local M/M/1.
 """
 
 from __future__ import annotations
 
-import math
+import logging
+import os
+import time
 from dataclasses import dataclass
 
 from xapp.healing.action_engine import HealingAction
 from xapp.ingestion.kpi_schema import KPIVector
 from xapp.model.anomaly_detector import AnomalyDetector
+from xapp.resilience import create_twin_circuit_breaker
+
+log = logging.getLogger("astra.twin")
 
 
 @dataclass
@@ -104,20 +112,36 @@ def _apply_action(action: HealingAction, lam: float, mu: float, state: dict) -> 
 
 
 class DigitalTwinSimulator:
-    def __init__(self, detector: AnomalyDetector, approval_threshold: float = 0.20) -> None:
+    def __init__(self, detector: AnomalyDetector, approval_threshold: float | None = None) -> None:
         self.detector = detector
-        self.approval_threshold = approval_threshold
-        import os
+        self.approval_threshold = approval_threshold or float(
+            os.getenv("DT_APPROVAL_THRESHOLD", "0.20")
+        )
         self.mode = os.getenv("ASTRA_MODE", "demo")
+
+        # Use shared circuit breaker from resilience module
+        self._circuit = create_twin_circuit_breaker()
+
         if self.mode == "prod":
-            import grpc
+            self._init_grpc()
+
+    def _init_grpc(self) -> None:
+        """Initialize gRPC channel to twin-service."""
+        try:
+            import grpc  # type: ignore[import-untyped]
             import sys
             sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../twin-service')))
-            import twin_pb2
-            import twin_pb2_grpc
-            self.channel = grpc.insecure_channel('localhost:50051')
+            import twin_pb2  # type: ignore[import-untyped]
+            import twin_pb2_grpc  # type: ignore[import-untyped]
+
+            twin_url = os.getenv("TWIN_SERVICE_URL", "localhost:50051")
+            self.channel = grpc.insecure_channel(twin_url)
             self.stub = twin_pb2_grpc.DigitalTwinStub(self.channel)
             self.twin_pb2 = twin_pb2
+            log.info("gRPC twin-service channel opened to %s", twin_url)
+        except Exception as exc:
+            log.warning("gRPC twin init failed — will use local M/M/1 only: %s", exc)
+            self.mode = "demo"  # fallback
 
     def _state_mse(self, state: dict[str, float]) -> float:
         """Score a projected state through the anomaly detector."""
@@ -132,18 +156,19 @@ class DigitalTwinSimulator:
         current_state: dict[str, float],
         current_mse: float,
     ) -> SimResult:
-        # ── gRPC mode: delegate to twin-service ────────────────────────
-        if self.mode == "prod":
-            req = self.twin_pb2.SimulateRequest(
-                candidate=self.twin_pb2.CandidateAction(
-                    action_type=action.action_type,
-                    parameters=action.parameters
-                ),
-                current_state=current_state,
-                current_mse=current_mse
-            )
+        # ── gRPC mode with circuit breaker ──────────────────────────────
+        if self.mode == "prod" and self._circuit.can_execute():
             try:
+                req = self.twin_pb2.SimulateRequest(
+                    candidate=self.twin_pb2.CandidateAction(
+                        action_type=action.action_type,
+                        parameters=action.parameters
+                    ),
+                    current_state=current_state,
+                    current_mse=current_mse
+                )
                 resp = self.stub.SimulateAction(req, timeout=2.0)
+                self._circuit.record_success()
                 return SimResult(
                     projected_state=dict(resp.projected_state),
                     projected_mse=resp.projected_mse,
@@ -152,9 +177,14 @@ class DigitalTwinSimulator:
                     recommendation=resp.recommendation
                 )
             except Exception as e:
-                return SimResult(current_state, current_mse, 0.0, False, f"gRPC Twin Error: {e}")
+                self._circuit.record_failure(e)
+                log.warning(
+                    "gRPC twin failed (circuit: %s): %s — falling back to local M/M/1",
+                    self._circuit.state.value, e,
+                )
+                # Fall through to local M/M/1
 
-        # ── Local M/M/1 queuing simulation ─────────────────────────────
+        # ── Local M/M/1 queuing simulation (fallback or demo mode) ──────
         lam_old, mu_old, rho_old = _derive_queue_params(current_state)
         lam_new, mu_new, overrides = _apply_action(action, lam_old, mu_old, current_state)
 
@@ -200,6 +230,7 @@ class DigitalTwinSimulator:
             "queue_length_before": round(_mm1_queue_length(rho_old), 2),
             "queue_length_after": round(_mm1_queue_length(new_rho), 2),
             "model_type": "M/M/1",
+            "circuit_breaker": self._circuit.stats(),
         }
 
         recommendation = (

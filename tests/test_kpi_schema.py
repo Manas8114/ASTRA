@@ -1,5 +1,4 @@
-import pytest
-from xapp.ingestion.kpi_schema import KPIVector, AnomalyType, KPI_NAMES
+from xapp.ingestion.kpi_schema import KPIVector
 
 def test_kpi_vector_initialization():
     vector = KPIVector(

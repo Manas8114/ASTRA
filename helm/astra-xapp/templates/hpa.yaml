@@ -1,0 +1,51 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ printf "%s-hpa" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "astra-xapp.fullname" . }}
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+  {{- if .Values.hpa.metrics.cpu.enabled }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.metrics.cpu.targetUtilization }}
+  {{- end }}
+  {{- if .Values.hpa.metrics.memory.enabled }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.metrics.memory.targetUtilization }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.hpa.behavior.scaleDown.stabilizationWindowSeconds }}
+      policies:
+        - type: Percent
+          value: {{ .Values.hpa.behavior.scaleDown.policies[0].value }}
+          periodSeconds: {{ .Values.hpa.behavior.scaleDown.policies[0].periodSeconds }}
+        - type: Pods
+          value: {{ .Values.hpa.behavior.scaleDown.policies[1].value }}
+          periodSeconds: {{ .Values.hpa.behavior.scaleDown.policies[1].periodSeconds }}
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.hpa.behavior.scaleUp.stabilizationWindowSeconds }}
+      policies:
+        - type: Percent
+          value: {{ .Values.hpa.behavior.scaleUp.policies[0].value }}
+          periodSeconds: {{ .Values.hpa.behavior.scaleUp.policies[0].periodSeconds }}
+        - type: Pods
+          value: {{ .Values.hpa.behavior.scaleUp.policies[1].value }}
+          periodSeconds: {{ .Values.hpa.behavior.scaleUp.policies[1].periodSeconds }}
+      selectPolicy: Max

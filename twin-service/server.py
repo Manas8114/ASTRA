@@ -25,7 +25,6 @@ This replaces the earlier stub that simply returned 0.7 * current_mse.
 import grpc
 from concurrent import futures
 import time
-import math
 import logging
 
 import twin_pb2
@@ -129,7 +128,7 @@ def project_state(action_type: str, parameters: dict, current_state: dict) -> di
 
 
 def compute_mse(current_state: dict, projected_state: dict) -> float:
-    """Simple normalised MSE between current and projected KPI vectors."""
+    """Normalised MSE between current and projected KPI vectors vs normal range centre."""
     normal_ranges = {
         "dl_throughput_mbps": (50.0, 500.0),
         "latency_ms": (5.0, 20.0),
@@ -144,12 +143,14 @@ def compute_mse(current_state: dict, projected_state: dict) -> float:
         span = max(hi - lo, 1e-6)
         curr_norm = (current_state.get(key, 0) - lo) / span
         proj_norm = (projected_state.get(key, 0) - lo) / span
-        # Distance from "normal centre" (0.5)
+        # Distance from "normal centre" (0.5) — both current and projected contribute
         curr_err = (curr_norm - 0.5) ** 2
         proj_err = (proj_norm - 0.5) ** 2
-        mse_sum += proj_err
+        # Use projected error as the primary metric; current used for normalisation
+        mse_sum += proj_err - curr_err  # positive = improvement, negative = degradation
         count += 1
     return mse_sum / max(count, 1)
+
 
 
 # ── gRPC Servicer ──────────────────────────────────────────────────────────

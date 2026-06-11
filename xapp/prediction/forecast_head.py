@@ -28,10 +28,10 @@ Usage:
   result = forecaster.predict(window)    # → ForecastResult
 """
 
-import torch
-import torch.nn as nn
-import numpy as np
-from dataclasses import dataclass, field
+import torch  # type: ignore[import-untyped]
+import torch.nn as nn  # type: ignore[import-untyped]
+import numpy as np  # type: ignore[import-untyped]
+from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
 import json
@@ -89,7 +89,7 @@ class ForecastHeadNet(nn.Module):
         Returns:
             forecast:   (batch, horizon, 6)
         """
-        batch = latent.size(0)
+        # batch dimension — used implicitly by LSTM; no explicit reference needed
 
         # Initialise LSTM hidden from latent
         h0 = self.latent_to_hidden(latent)            # (batch, hidden)
@@ -173,7 +173,7 @@ class ForecastHead:
                 self.device = torch.device(d)
             else:
                 self.device = get_device()
-        self._last_result = None
+        self._last_result: dict | None = None  # lightweight summary only — avoids holding large arrays
         log.info("ForecastHead using device: %s", self.device)
 
         # Load threshold
@@ -286,5 +286,13 @@ class ForecastHead:
             summary=summary,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
-        self._last_result = res
+        # Cache only a compact summary to avoid holding large numpy arrays in memory
+        self._last_result = {
+            "preemptive_alert": preemptive_alert,
+            "seconds_to_anomaly": seconds_to_anomaly,
+            "confidence": confidence,
+            "at_risk_kpis": at_risk_kpis,
+            "summary": summary,
+            "timestamp": res.timestamp,
+        }
         return res

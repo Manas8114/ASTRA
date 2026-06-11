@@ -1,0 +1,25 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-pdb" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+      app.kubernetes.io/component: xapp
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ printf "%s-twin-pdb" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+spec:
+  minAvailable: {{ .Values.twin.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+      app.kubernetes.io/component: twin

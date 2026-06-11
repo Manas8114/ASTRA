@@ -1,0 +1,51 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ printf "%s-twin-hpa" (include "astra-xapp.fullname" .) | quote }}
+  labels:
+    app.kubernetes.io/name: {{ include "astra-xapp.name" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ printf "%s-twin" (include "astra-xapp.fullname" .) }}
+  minReplicas: {{ .Values.twin.hpa.minReplicas }}
+  maxReplicas: {{ .Values.twin.hpa.maxReplicas }}
+  metrics:
+  {{- if .Values.twin.hpa.metrics.cpu.enabled }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.twin.hpa.metrics.cpu.targetUtilization }}
+  {{- end }}
+  {{- if .Values.twin.hpa.metrics.memory.enabled }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.twin.hpa.metrics.memory.targetUtilization }}
+  {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.twin.hpa.behavior.scaleDown.stabilizationWindowSeconds }}
+      policies:
+        - type: Percent
+          value: {{ .Values.twin.hpa.behavior.scaleDown.policies[0].value }}
+          periodSeconds: {{ .Values.twin.hpa.behavior.scaleDown.policies[0].periodSeconds }}
+        - type: Pods
+          value: {{ .Values.twin.hpa.behavior.scaleDown.policies[1].value }}
+          periodSeconds: {{ .Values.twin.hpa.behavior.scaleDown.policies[1].periodSeconds }}
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.twin.hpa.behavior.scaleUp.stabilizationWindowSeconds }}
+      policies:
+        - type: Percent
+          value: {{ .Values.twin.hpa.behavior.scaleUp.policies[0].value }}
+          periodSeconds: {{ .Values.twin.hpa.behavior.scaleUp.policies[0].periodSeconds }}
+        - type: Pods
+          value: {{ .Values.twin.hpa.behavior.scaleUp.policies[1].value }}
+          periodSeconds: {{ .Values.twin.hpa.behavior.scaleUp.policies[1].periodSeconds }}
+      selectPolicy: Max
