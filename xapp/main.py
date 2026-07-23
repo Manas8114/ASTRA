@@ -178,6 +178,15 @@ async def lifespan(app: FastAPI):
     _app.include_router(websocket_router(_hub))
     _app.include_router(a1_router(_state_manager))
 
+    # CR²E Router Integration (Phase 7)
+    from xapp.api import cr2e_router_factory
+    cr2e_r = cr2e_router_factory()
+    if cr2e_r:
+        _app.include_router(cr2e_r)
+        _logger.info("CR²E causal root-cause API mounted successfully under /cr2e")
+    else:
+        _logger.info("CR²E causal package not loaded/active; bypassing router mount")
+
     # ── Metrics ─────────────────────────────────────────────────────────────
     if _settings.is_prod:
         try:

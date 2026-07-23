@@ -1,0 +1,64 @@
+{
+  "n_trials": 4,
+  "n_with_ground_truth": 4,
+  "precision_at_1": 1.0,
+  "precision_at_3": 1.0,
+  "recall_at_3": 1.0,
+  "per_fault_evals": [
+    {
+      "fault_id": "demo-congestion",
+      "anomaly_type": "CONGESTION",
+      "expected_root_cause": "slice_utilisation_pct",
+      "top1_predicted": "slice_utilisation_pct",
+      "top3_predicted": [
+        "slice_utilisation_pct"
+      ],
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "data_provenance_tag": "[SYNTHETIC:injected-fault-demo]",
+      "notes": ""
+    },
+    {
+      "fault_id": "demo-high_latency",
+      "anomaly_type": "HIGH_LATENCY",
+      "expected_root_cause": "latency_ms",
+      "top1_predicted": "latency_ms",
+      "top3_predicted": [
+        "latency_ms"
+      ],
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "data_provenance_tag": "[SYNTHETIC:injected-fault-demo]",
+      "notes": ""
+    },
+    {
+      "fault_id": "demo-packet_loss",
+      "anomaly_type": "PACKET_LOSS",
+      "expected_root_cause": "bler_pct",
+      "top1_predicted": "bler_pct",
+      "top3_predicted": [
+        "bler_pct"
+      ],
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "data_provenance_tag": "[SYNTHETIC:injected-fault-demo]",
+      "notes": ""
+    },
+    {
+      "fault_id": "demo-slice_overflow",
+      "anomaly_type": "SLICE_OVERFLOW",
+      "expected_root_cause": "slice_utilisation_pct",
+      "top1_predicted": "slice_utilisation_pct",
+      "top3_predicted": [
+        "slice_utilisation_pct"
+      ],
+      "hit_at_1": true,
+      "hit_at_3": true,
+      "data_provenance_tag": "[SYNTHETIC:injected-fault-demo]",
+      "notes": ""
+    }
+  ],
+  "data_provenance_tag": "[SYNTHETIC:injected-fault-demo]",
+  "evaluated_at": "2026-07-23T17:59:39.007176+00:00",
+  "notes": "Demo mode \u2014 synthetic injection records. Re-run with open5gs testbed for testbed-validated numbers."
+}

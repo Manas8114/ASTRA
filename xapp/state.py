@@ -64,6 +64,11 @@ class LiveState:
                 self.latest_simulation = event
             elif event_type == "HEALING_APPLIED":
                 self.healing.append(event)
+            elif event_type == "ROOT_CAUSE_REPORT":
+                # CR²E Phase 7: store the latest root-cause report in events deque.
+                # No separate deque needed — downstream consumers read from events.
+                pass  # event already appended to self.events above
+
 
         # Async dispatch for Redis persistence (only in prod mode)
         if ASTRA_MODE == "prod":

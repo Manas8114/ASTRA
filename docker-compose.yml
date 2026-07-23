@@ -54,6 +54,47 @@ services:
     networks:
       - astra-net
 
+  # ── CR²E — Causal RAN Root-Cause Engine (demo mode, always-on) ──────────────
+
+  cr2e:
+    build:
+      context: .
+      dockerfile: cr2e/Dockerfile
+    container_name: cr2e-engine
+    env_file: .env
+    environment:
+      - CR2E_MODE=demo
+      - ASTRA_BASE_URL=http://astra:8000
+      - CR2E_OLLAMA_URL=http://host.docker.internal:11434
+      - CR2E_MLFLOW_URI=http://mlflow:5000
+    ports:
+      - "8001:8001"
+    volumes:
+      - cr2e-dag-store:/app/cr2e/data
+      - ./cr2e:/app/cr2e
+    depends_on:
+      - astra
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/cr2e/health')"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - astra-net
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.14.0
+    container_name: cr2e-mlflow
+    command: mlflow server --host 0.0.0.0 --port 5000
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-artifacts:/mlruns
+    restart: unless-stopped
+    networks:
+      - astra-net
+
   # ── Lab profile services (opt-in with --profile lab) ─────────────────────
 
   mongodb:
@@ -138,3 +179,5 @@ volumes:
   dashboard-node-modules:
   mongodb-data:
   grafana-data:
+  cr2e-dag-store:    # persists discovered DAG snapshots across restarts
+  mlflow-artifacts:  # MLflow experiment tracking artifacts

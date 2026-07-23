@@ -1,9 +1,10 @@
-# ASTRA
+# ASTRA & CR²E — Causal 5G RAN Self-Healing
 
-ASTRA is an O-RAN xApp prototype for autonomous 5G RAN self-healing. It
-detects KPI anomalies, classifies the likely fault, validates healing actions in
-a Digital Twin, applies safe actions through an E2 RC client boundary, and
-streams all events to a React NOC dashboard.
+ASTRA and CR²E together form a complete O-RAN self-healing closed loop:
+- **ASTRA (Detect & Predict)**: Detects KPI anomalies (LSTM Autoencoder), extracts feature attribution, models preemptive risk paths, simulates healing outcomes (M/M/1 Digital Twin), and applies actions (E2 RC).
+- **CR²E (Explain & Prescribe)**: Answers *why* anomalies occur and *what* is the minimal fix. It runs causal discovery (PC/NOTEARS background knowledge constrained by 3GPP/O-RAN domain physics) and causal estimation (DoWhy + EconML LinearDML) to isolate root causes and prescribe precise counterfactual interventions.
+
+All events are streamed to a consolidated NOC React dashboard.
 
 ## Recovery Performance (MTTR)
 
@@ -96,20 +97,21 @@ true E2 node SCTP wiring still depend on your local telecom lab build.
 
 ## Implemented
 
-- Shared backend state for KPI, anomaly, twin, forecast, and healing events.
-- REST/WebSocket backend and React NOC dashboard.
-- LSTM autoencoder architecture plus real training script.
-- Statistical detector fallback when no model checkpoint exists.
-- Prometheus and Open5GS JSONL KPI adapters.
-- **M/M/1 Queuing Digital Twin** gate before every healing action.
-- Preemptive healing path using forecasted KPI risk.
-- **Explainable AI (XAI)** per-feature attribution with dashboard bar chart.
-- **Multi-Cell Coordination** via topology-based neighbor broadcast.
-- **EWC Continual Learning** to prevent catastrophic forgetting.
-- Rollback metadata, cooldown safety, optional control API key.
-- SQLite/Redis event persistence hooks.
-- Demo and lab Docker Compose profiles.
-- Tests, dashboard build, and Compose validation.
+- **ASTRA Core**: Shared backend state for KPI, anomaly, twin, forecast, and healing events.
+- **NOC Dashboard**: REST/WebSocket backend and React NOC dashboard with real-time anomaly timeline.
+- **LSTM Autoencoder**: LSTM anomaly detector plus real training script.
+- **Statistical Fallback**: Statistical detector fallback when no model checkpoint exists.
+- **KPI Adapters**: Prometheus and Open5GS JSONL KPI adapters.
+- **M/M/1 Queuing Digital Twin**: Queue-based prediction before every healing action.
+- **Preemptive Healing**: Forecasting head path using forecasted KPI risk.
+- **XAI Reconstruction**: Per-feature attribution with dashboard bar chart.
+- **Multi-Cell Coordination**: Topology-based neighbor advisory broadcast.
+- **EWC Continual Learning**: Prevent catastrophic forgetting during fine-tuning.
+- **CR²E — Causal Root-Cause Engine**: Domain-constrained PC/NOTEARS causal discovery, DoWhy+LinearDML effect estimation with refutations, root-cause ranking, counterfactual prescriptions, and natural language explanations (Ollama / template fallback).
+- **Dashboard Integration**: Root Cause panel added directly into the ASTRA React dashboard to stream CR²E reports.
+- **Docker Integration**: `cr2e` and `mlflow` services added to Compose for experiment and model snapshot tracking.
+- **Automated Tests**: Unit and integration test suites validating domain DAG constraint enforcement, ranker robustness, DoWhy estimation correctness, and counterfactual delta consistency.
+
 
 ## RIC Framework
 

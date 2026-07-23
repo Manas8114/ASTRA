@@ -10,6 +10,7 @@ import { TopologyView } from "./components/TopologyView.jsx";
 import { useWebSocket } from "./hooks/useWebSocket.js";
 import { NocControls } from "./components/NocControls.jsx";
 import ForecastPanel from "./components/ForecastPanel.jsx";
+import RootCausePanel from "./components/RootCausePanel.jsx";
 import "./styles.css";
 
 function App() {
@@ -28,6 +29,7 @@ function App() {
         <NocControls />
         <ForecastPanel wsLastMessage={live.lastMessage} />
         <AnomalyTimeline anomalies={live.anomalies} />
+        <RootCausePanel />
         <XAIAttribution event={live.attribution} />
         <DTSimView simulation={live.simulation} />
         <HealingLog healing={live.healing} />
