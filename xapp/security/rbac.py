@@ -6,8 +6,8 @@ log = logging.getLogger("astra.rbac")
 
 # In production, this integrates with Keycloak or an OAuth2 provider
 # Here we simulate simple RBAC via headers or static tokens
-ADMIN_TOKEN = os.getenv("ASTRA_ADMIN_TOKEN", "admin-secret-token")
-VIEWER_TOKEN = os.getenv("ASTRA_VIEWER_TOKEN", "viewer-secret-token")
+ADMIN_TOKEN = os.getenv("ASTRA_ADMIN_TOKEN")
+VIEWER_TOKEN = os.getenv("ASTRA_VIEWER_TOKEN")
 OIDC_ISSUER = os.getenv("OIDC_ISSUER", "https://keycloak.local/realms/astra")
 
 class Role:
@@ -60,9 +60,9 @@ def get_current_role(request: Request) -> str:
             raise HTTPException(status_code=401, detail="Invalid OIDC Token")
 
     # 3. Fallback to static tokens for legacy/testing
-    if token == ADMIN_TOKEN:
+    if ADMIN_TOKEN and token == ADMIN_TOKEN:
         return Role.ADMIN
-    if token == VIEWER_TOKEN:
+    if VIEWER_TOKEN and token == VIEWER_TOKEN:
         return Role.VIEWER
         
     raise HTTPException(status_code=401, detail="Invalid token")
