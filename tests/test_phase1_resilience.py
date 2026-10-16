@@ -11,13 +11,12 @@ Integration tests for Phase 1 resilience components:
 
 import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 from xapp.resilience import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitState,
-    CircuitOpenError,
     breaker_registry,
     create_twin_circuit_breaker,
     create_e2_circuit_breaker,
@@ -29,10 +28,9 @@ from xapp.observability import (
     correlation_id_var,
     get_correlation_id,
     log_context,
-    CorrelationIDMiddleware,
 )
 from xapp.lifecycle import LifecycleManager, GracefulShutdown
-from xapp.config import get_settings, Settings, RedisSettings, E2Settings, TwinSettings
+from xapp.config import get_settings
 from xapp.healing.action_engine import HealingActionEngine, HealingAction
 from xapp.ingestion.kpi_schema import AnomalyType
 
@@ -225,7 +223,7 @@ class TestStructuredLogging:
 
     def test_log_context_manager(self):
         """Test log_context binds and unbinds context."""
-        logger = get_logger("test")
+        get_logger("test")
 
         with log_context(cell_id="cell_001", operation="healing"):
             # Context should be bound

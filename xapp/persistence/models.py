@@ -15,7 +15,6 @@ from sqlalchemy import (
     DateTime,
     Index,
     String,
-    Text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 

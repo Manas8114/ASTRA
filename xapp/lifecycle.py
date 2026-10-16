@@ -37,7 +37,7 @@ import logging
 import signal
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Optional
 
 from xapp.config import get_settings
@@ -223,7 +223,7 @@ class LifecycleManager:
         components = sorted(self._components, key=lambda c: c.priority)
 
         results = {"success": [], "failed": [], "timeout": []}
-        overall_timeout = get_settings().observatory.log_level  # Not used; just for settings access
+        get_settings().observatory.log_level  # Not used; just for settings access
         overall_deadline = self._start_time + self._default_timeout
 
         for component in components:

@@ -17,12 +17,11 @@ Usage:
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -288,7 +287,7 @@ class Settings(BaseSettings):
                 errors.append("E2_MAX_RETRIES must be >= 1 in prod mode")
 
             if errors:
-                raise ValueError(f"Production configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
+                raise ValueError("Production configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors))
 
         return self
 

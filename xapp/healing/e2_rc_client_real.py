@@ -52,11 +52,9 @@ HandoverThresholdAdjust ::= SEQUENCE {
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from dataclasses import dataclass
-from enum import IntEnum
-from typing import Any, Optional
+from typing import Optional
 
 import asn1tools
 

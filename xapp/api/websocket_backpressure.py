@@ -21,10 +21,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from fastapi import WebSocket
 from prometheus_client import Counter, Gauge, Histogram
@@ -459,7 +458,7 @@ class WebSocketHubCompat:
         self._clients_list: list[WebSocket] = []  # For compatibility
 
     async def connect(self, websocket: WebSocket) -> None:
-        client_id = await self._hub.connect(websocket)
+        await self._hub.connect(websocket)
         self._clients_list.append(websocket)
 
     def disconnect(self, websocket: WebSocket) -> None:
