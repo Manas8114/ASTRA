@@ -19,7 +19,7 @@ spec:
         severity: warning
       annotations:
         summary: "High anomaly detection rate on {{ `$labels.cell_id` }}"
-        description: "Anomaly rate is {{ `$value` | humanizeDuration }} per second, exceeding threshold"
+        description: "Anomaly rate is {{ `$value` }} per second, exceeding threshold"
 
     # Alert: Healing action failures
     - alert: AstraHealingFailure
@@ -41,7 +41,7 @@ spec:
         severity: warning
       annotations:
         summary: "Forecast confidence dropped on {{ `$labels.cell_id` }}"
-        description: "Forecast confidence is {{ `$value` | humanizePercentage }}"
+        description: "Forecast confidence is {{ `$value` }}"
 
     # Alert: Model MSE regression
     - alert: AstraModelMSERegression
@@ -52,23 +52,23 @@ spec:
         severity: critical
       annotations:
         summary: "Model MSE regression on {{ `$labels.cell_id` }}"
-        description: "Model MSE has increased by {{ `$value | humanizePercentage }}` relative to baseline"
+        description: "Model MSE has increased by {{ `$value` }} relative to baseline"
 
     # Alert: E2 connection down
     - alert: AstraE2ConnectionDown
       expr: |
-        up{job="{{ include \"astra-xapp.fullname\" . }}",component="e2"} == 0
+        up{job="{{ include "astra-xapp.fullname" . }}",component="e2"} == 0
       for: {{ .Values.prometheusRule.alerts.e2ConnectionDown.for }}
       labels:
         severity: critical
       annotations:
         summary: "E2 connection down for {{ `$labels.cell_id` }}"
-        description: "E2 control plane connection has been down for {{ `$value` | humanizeDuration }}"
+        description: "E2 control plane connection has been down for {{ `$value` }}"
 
     # Alert: Redis down
     - alert: AstraRedisDown
       expr: |
-        redis_up{pod=~"{{ include \"astra-xapp.fullname\" . }}-redis.*"} == 0
+        redis_up{pod=~"{{ include "astra-xapp.fullname" . }}-redis.*"} == 0
       for: {{ .Values.prometheusRule.alerts.redisDown.for }}
       labels:
         severity: critical
@@ -107,7 +107,7 @@ spec:
         severity: warning
       annotations:
         summary: "WebSocket client queue near capacity for {{ `$labels.client_id` }}"
-        description: "Queue utilization is {{ `$value | humanizePercentage }}`"
+        description: "Queue utilization is {{ `$value` }}"
 
     # Alert: Drift detection triggered
     - alert: AstraDriftDetected

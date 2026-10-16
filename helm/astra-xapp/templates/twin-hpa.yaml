@@ -33,19 +33,19 @@ spec:
       stabilizationWindowSeconds: {{ .Values.twin.hpa.behavior.scaleDown.stabilizationWindowSeconds }}
       policies:
         - type: Percent
-          value: {{ .Values.twin.hpa.behavior.scaleDown.policies[0].value }}
-          periodSeconds: {{ .Values.twin.hpa.behavior.scaleDown.policies[0].periodSeconds }}
+          value: {{ (index .Values.twin.hpa.behavior.scaleDown.policies 0).value }}
+          periodSeconds: {{ (index .Values.twin.hpa.behavior.scaleDown.policies 0).periodSeconds }}
         - type: Pods
-          value: {{ .Values.twin.hpa.behavior.scaleDown.policies[1].value }}
-          periodSeconds: {{ .Values.twin.hpa.behavior.scaleDown.policies[1].periodSeconds }}
+          value: {{ (index .Values.twin.hpa.behavior.scaleDown.policies 1).value }}
+          periodSeconds: {{ (index .Values.twin.hpa.behavior.scaleDown.policies 1).periodSeconds }}
       selectPolicy: Min
     scaleUp:
       stabilizationWindowSeconds: {{ .Values.twin.hpa.behavior.scaleUp.stabilizationWindowSeconds }}
       policies:
         - type: Percent
-          value: {{ .Values.twin.hpa.behavior.scaleUp.policies[0].value }}
-          periodSeconds: {{ .Values.twin.hpa.behavior.scaleUp.policies[0].periodSeconds }}
+          value: {{ (index .Values.twin.hpa.behavior.scaleUp.policies 0).value }}
+          periodSeconds: {{ (index .Values.twin.hpa.behavior.scaleUp.policies 0).periodSeconds }}
         - type: Pods
-          value: {{ .Values.twin.hpa.behavior.scaleUp.policies[1].value }}
-          periodSeconds: {{ .Values.twin.hpa.behavior.scaleUp.policies[1].periodSeconds }}
+          value: {{ (index .Values.twin.hpa.behavior.scaleUp.policies 1).value }}
+          periodSeconds: {{ (index .Values.twin.hpa.behavior.scaleUp.policies 1).periodSeconds }}
       selectPolicy: Max
