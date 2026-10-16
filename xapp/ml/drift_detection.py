@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -34,10 +33,9 @@ from enum import Enum
 from typing import Any, Optional
 
 import numpy as np
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge
 from scipy import stats
 
-from xapp.config import get_settings
 from xapp.observability import get_logger
 
 log = get_logger("astra.drift")

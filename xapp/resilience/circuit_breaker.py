@@ -28,10 +28,9 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from threading import Lock
 from typing import Any, Awaitable, Callable, Optional, TypeVar
@@ -414,7 +413,7 @@ def create_e2_circuit_breaker() -> CircuitBreaker:
 
 def create_redis_circuit_breaker() -> CircuitBreaker:
     """Create circuit breaker for Redis operations."""
-    settings = get_settings()
+    get_settings()
     config = CircuitBreakerConfig(
         name="redis",
         failure_threshold=5,

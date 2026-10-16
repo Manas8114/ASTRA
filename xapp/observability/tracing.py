@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import os
 from contextvars import ContextVar
-from typing import Optional
+from typing import Any, Optional
 
 from opentelemetry import trace, baggage
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
@@ -297,7 +297,7 @@ def trace_function(operation: str, **attributes: Any):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            with AstraSpan(operation, **attributes) as span:
+            with AstraSpan(operation, **attributes):
                 return func(*args, **kwargs)
         return wrapper
     return decorator
@@ -308,7 +308,7 @@ def trace_async_function(operation: str, **attributes: Any):
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            async with trace_async(operation, **attributes) as span:
+            async with trace_async(operation, **attributes):
                 return await func(*args, **kwargs)
         return wrapper
     return decorator

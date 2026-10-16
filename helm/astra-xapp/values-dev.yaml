@@ -9,19 +9,6 @@ service:
   type: NodePort
   port: 8000
 
-twin:
-  image:
-    repository: astra-twin
-    tag: "dev"
-    pullPolicy: IfNotPresent
-  resources:
-    limits:
-      cpu: 500m
-      memory: 512Mi
-    requests:
-      cpu: 100m
-      memory: 256Mi
-
 redis:
   image:
     repository: redis
@@ -101,6 +88,19 @@ hpa:
 
 # ── Twin HPA ───────────────────────────────────────────────────────────────
 twin:
+  image:
+    repository: astra-twin
+    tag: "dev"
+    pullPolicy: IfNotPresent
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  pdb:
+    minAvailable: 1
   hpa:
     minReplicas: 1
     maxReplicas: 1
@@ -121,9 +121,6 @@ twin:
 pdb:
   minAvailable: 1
 
-twin:
-  pdb:
-    minAvailable: 1
 
 # ── Network Policy ─────────────────────────────────────────────────────────
 networkPolicy:
