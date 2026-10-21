@@ -8,14 +8,10 @@ Integration tests for Phase 2:
 - End-to-end healing pipeline tests
 """
 
-import asyncio
 import pytest
-import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from xapp.persistence.redis_reliability import ReliableRedisClient, RetryConfig, RetryPolicy, DeadLetterEntry
-from xapp.persistence.pg_audit_async import AsyncPGAuditTrail, AuditEvent, QueryFilter
+from xapp.persistence.pg_audit_async import AsyncPGAuditTrail, QueryFilter
 from xapp.ml.drift_detection import DriftDetector, DriftConfig, DriftSeverity, DriftType
 from xapp.healing.action_engine import HealingActionEngine, HealingAction
 from xapp.ingestion.kpi_schema import AnomalyType
@@ -27,7 +23,7 @@ class TestRedisReliability:
     @pytest.mark.asyncio
     async def test_reliable_client_start_stop(self):
         """Test client starts and stops cleanly."""
-        client = ReliableRedisClient(
+        ReliableRedisClient(
             host="localhost", port=6379,
             db=15,  # Use test DB
         )
@@ -35,7 +31,7 @@ class TestRedisReliability:
     @pytest.mark.asyncio
     async def test_retry_logic(self):
         """Test retry with exponential backoff."""
-        config = RetryConfig(max_retries=2, base_delay=0.01, policy=RetryPolicy.EXPONENTIAL)
+        RetryConfig(max_retries=2, base_delay=0.01, policy=RetryPolicy.EXPONENTIAL)
 
         # Test delay calculation manually
         # For exponential: base_delay * 2^attempt
@@ -93,7 +89,7 @@ class TestAsyncPGAuditTrail:
     async def test_sqlite_audit_trail(self, tmp_path):
         """Test audit trail with SQLite backend."""
         db_path = tmp_path / "test_audit.db"
-        audit = AsyncPGAuditTrail(dsn=f"sqlite:///{db_path}")
+        AsyncPGAuditTrail(dsn=f"sqlite:///{db_path}")
 
     @pytest.mark.asyncio
     async def test_append_and_query_events(self, tmp_path):

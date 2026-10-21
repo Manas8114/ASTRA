@@ -406,7 +406,6 @@ class AsyncPGAuditTrail:
             return [dict(row) for row in rows]
 
     async def _query_events_sqlite(self, filter: QueryFilter) -> list[dict[str, Any]]:
-        import aiosqlite
 
         conditions = ["1=1"]
         params = []

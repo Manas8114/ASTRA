@@ -24,8 +24,8 @@ active_policies = {}
 
 def get_api_key(api_key: str = None):
     if os.getenv("ASTRA_MODE") == "prod":
-        expected_key = os.getenv("A1_API_KEY", "astra-secret-token")
-        if api_key != expected_key:
+        expected_key = os.getenv("A1_API_KEY")
+        if not expected_key or api_key != expected_key:
             raise HTTPException(status_code=401, detail="Unauthorized - Invalid API Key for A1 Interface")
     return api_key
 

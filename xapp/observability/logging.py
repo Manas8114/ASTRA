@@ -400,4 +400,3 @@ def log_duration(logger: structlog.BoundLogger, operation: str, **kwargs: Any) -
 
 # ── Import time for middleware (avoid circular import) ────────────────────────
 
-import time  # noqa: E402

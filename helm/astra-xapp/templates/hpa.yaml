@@ -33,19 +33,19 @@ spec:
       stabilizationWindowSeconds: {{ .Values.hpa.behavior.scaleDown.stabilizationWindowSeconds }}
       policies:
         - type: Percent
-          value: {{ .Values.hpa.behavior.scaleDown.policies[0].value }}
-          periodSeconds: {{ .Values.hpa.behavior.scaleDown.policies[0].periodSeconds }}
+          value: {{ (index .Values.hpa.behavior.scaleDown.policies 0).value }}
+          periodSeconds: {{ (index .Values.hpa.behavior.scaleDown.policies 0).periodSeconds }}
         - type: Pods
-          value: {{ .Values.hpa.behavior.scaleDown.policies[1].value }}
-          periodSeconds: {{ .Values.hpa.behavior.scaleDown.policies[1].periodSeconds }}
+          value: {{ (index .Values.hpa.behavior.scaleDown.policies 1).value }}
+          periodSeconds: {{ (index .Values.hpa.behavior.scaleDown.policies 1).periodSeconds }}
       selectPolicy: Min
     scaleUp:
       stabilizationWindowSeconds: {{ .Values.hpa.behavior.scaleUp.stabilizationWindowSeconds }}
       policies:
         - type: Percent
-          value: {{ .Values.hpa.behavior.scaleUp.policies[0].value }}
-          periodSeconds: {{ .Values.hpa.behavior.scaleUp.policies[0].periodSeconds }}
+          value: {{ (index .Values.hpa.behavior.scaleUp.policies 0).value }}
+          periodSeconds: {{ (index .Values.hpa.behavior.scaleUp.policies 0).periodSeconds }}
         - type: Pods
-          value: {{ .Values.hpa.behavior.scaleUp.policies[1].value }}
-          periodSeconds: {{ .Values.hpa.behavior.scaleUp.policies[1].periodSeconds }}
+          value: {{ (index .Values.hpa.behavior.scaleUp.policies 1).value }}
+          periodSeconds: {{ (index .Values.hpa.behavior.scaleUp.policies 1).periodSeconds }}
       selectPolicy: Max

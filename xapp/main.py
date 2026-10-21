@@ -15,7 +15,6 @@ Production-ready entry point with:
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -39,7 +38,6 @@ from xapp.model.anomaly_detector import AnomalyDetector
 from xapp.model.attention_extractor import AttentionExtractor
 from xapp.innovations.multicell.coordinator import MultiCellCoordinator
 from xapp.persistence.redis_client import redis_client
-from xapp.persistence.pg_audit import pg_audit_trail
 from xapp.prediction.forecast_head import ForecastHead
 from xapp.prediction.preemptive_healer import PreemptiveHealer
 from xapp.security.rbac import get_current_role
@@ -49,7 +47,6 @@ from xapp.security.rbac import get_current_role
 from xapp.config import get_settings
 from xapp.lifecycle import LifecycleManager, register_shutdown_handlers
 from xapp.observability import setup_logging, get_logger, CorrelationIDMiddleware, setup_tracing
-from xapp.resilience import create_twin_circuit_breaker, create_e2_circuit_breaker
 
 
 # ── Settings & Logging Initialization ────────────────────────────────────────
